@@ -1,0 +1,21 @@
+{
+    "DH_params":{
+        "theta":        [0,       180,      -90,      0,        0,      0],
+        "d":            [0.1735,  0,         0,       -0.1182,  0,      0.264],
+        "a":            [0.027,   0.1629,   0.055,    0,        0,      0],
+        "alpha":        [-90,     180,      -90,      90,       90,     0],
+        "joint_types":  [0,       0,        0,        0,        0,      0]
+    },
+    "joint_limits":{
+        "min_joint_positions":[-180, 0, 0, -175, -120, -175],
+        "max_joint_positions":[180, 175, 150, 175, 120, 175],
+        "min_joint_velocities":[-20, -20, -40, -40, -40, -60],
+        "max_joint_velocities":[20, 20, 40, 40, 40, 60]
+    },
+    "solver_config": {
+        "translation_priority": 0.9999,
+        "error_gain": 50,
+        "joint_damping": 0.0001,
+        "sampling_time_sec": 0.004
+    }
+} 
