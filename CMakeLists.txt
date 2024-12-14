@@ -83,18 +83,18 @@ add_compile_options(
     "$<${msvc_cxx}:$<BUILD_INTERFACE:/W4>>"
 )
 
-add_subdirectory(libs/qpOASES)
-add_subdirectory(libs/json)
+add_subdirectory(external/qpOASES)
+add_subdirectory(external/json)
 find_package(Boost COMPONENTS system REQUIRED)
 if (NOT Boost_FOUND)
     message(FATAL_ERROR "Boost not found. Install Boost and ensure the system component is available.")
 endif()
-set(remoteApiCoppeliasim_LIB ${PROJECT_SOURCE_DIR}/libs/coppeliasim/libs/libremoteApiCoppeliasim.so)
+set(remoteApiCoppeliasim_LIB ${PROJECT_SOURCE_DIR}/external/coppeliasim/share/libremoteApiCoppeliasim.so)
 if(NOT EXISTS ${remoteApiCoppeliasim_LIB})
-    message(FATAL_ERROR "libremoteApiCoppeliasim.so not found in ${PROJECT_SOURCE_DIR}/libs/coppeliasim/libs")
+    message(FATAL_ERROR "libremoteApiCoppeliasim.so not found in ${PROJECT_SOURCE_DIR}/external/coppeliasim/share")
 endif()
-set(CMAKE_BUILD_RPATH ${PROJECT_SOURCE_DIR}/libs/coppeliasim/libs)
-set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/libs")
+set(CMAKE_BUILD_RPATH ${PROJECT_SOURCE_DIR}/external/coppeliasim/share)
+set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/external")
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
 ########################################################################################################################################
@@ -107,9 +107,9 @@ target_include_directories(timr INTERFACE
     $<BUILD_INTERFACE:
         ${PROJECT_SOURCE_DIR}/include
         ${PROJECT_SOURCE_DIR}/include/timr
-        ${PROJECT_SOURCE_DIR}/libs/qpOASES/include
-        ${PROJECT_SOURCE_DIR}/libs/json/include
-        ${PROJECT_SOURCE_DIR}/libs/coppeliasim/include>
+        ${PROJECT_SOURCE_DIR}/external/qpOASES/include
+        ${PROJECT_SOURCE_DIR}/external/json/include
+        ${PROJECT_SOURCE_DIR}/external/coppeliasim/include>
     $<INSTALL_INTERFACE:include> 
 )
 
@@ -148,7 +148,7 @@ install(FILES
         "${CMAKE_CURRENT_BINARY_DIR}/timrConfigVersion.cmake"
         DESTINATION lib/cmake/timr
 )
-install(FILES ${PROJECT_SOURCE_DIR}/libs/coppeliasim/libs/libremoteApiCoppeliasim.so
+install(FILES ${PROJECT_SOURCE_DIR}/external/coppeliasim/share/libremoteApiCoppeliasim.so
         DESTINATION lib
 )
     
