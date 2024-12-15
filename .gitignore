@@ -1,4 +1,6 @@
 .vscode/
 build/
+install/
+log/
 legacy/
 z-legacy/

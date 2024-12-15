@@ -1,10 +1,8 @@
-#include "kinematics/kinematics.h"
+#include "/home/kai/Projects/timr/ros2_ws/src/kinematics/include/kinematics/kinematics.hpp"
 #include <rclcpp/rclcpp.hpp>
-#include <std_msgs/msg/string.hpp>
 #include <geometry_msgs/msg/pose.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <array>
 #include <memory>
 
