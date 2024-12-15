@@ -36,6 +36,7 @@ int main(int argc, char* argv[])
         using driver::robotdriver0;
         using namespace timr;
 
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         using scalar_t = double;
         auto init_joint_positions = robotdriver0.get_joint_positions();
         std::this_thread::sleep_for(std::chrono::milliseconds(2000));

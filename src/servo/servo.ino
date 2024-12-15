@@ -6,7 +6,7 @@ int increment = 1;  // How much to move each step
 
 void setup() {
   myservo.attach(7);  // Attaches the servo on pin 9
-  myservo.write(60);
+  myservo.write(105); // 20-105
 }
 
 void loop() {
