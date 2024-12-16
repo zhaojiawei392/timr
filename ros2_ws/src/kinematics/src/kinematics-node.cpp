@@ -5,57 +5,69 @@
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <array>
 #include <memory>
+#include <signal.h>
+
+volatile sig_atomic_t g_interrupt_flag = 0;
+
+void kill_this_node(int signum) {
+    g_interrupt_flag = 1;
+}
 
 using scalar_t = double;
-constexpr kinematics::dof_size_t DOF = 6;
+using kinematics::dof_size_t;
+constexpr dof_size_t DOF = 6;
 
+struct KinematicsNodeConfig
+{
+    std::string robot_description_path;
+};
 class KinematicsNode : public rclcpp::Node
 {
-protected:
-    rclcpp::Subscription<geometry_msgs::msg::Pose>::SharedPtr _sub_desired_pose;
-    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr _pub_joint_positions;
+private:
+    KinematicsNodeConfig _cfg;
+    rclcpp::Subscription<geometry_msgs::msg::Pose>::SharedPtr _sub_target_pose;
+    rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr _sub_joint_states;
+    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr _pub_target_joint_positions;
 
     std::unique_ptr<kinematics::SerialManipulator<scalar_t, DOF>> _manipulator_kinematics;
     rclcpp::TimerBase::SharedPtr _timer;
 
-public:
-    KinematicsNode() 
-    : Node("kinematics_node")
+    void _callback_target_pose(const geometry_msgs::msg::Pose::SharedPtr msg)
     {
-        // Create subscription to pose topic
-        _sub_desired_pose = this->create_subscription<geometry_msgs::msg::Pose>(
-            "desired_pose", 10,
-            std::bind(&KinematicsNode::_callback_desired_pose, this, std::placeholders::_1));
-
-        // Create publisher for joint states
-        _pub_joint_positions = this->create_publisher<sensor_msgs::msg::JointState>(
-            "joint_states", 10);
-
-        // Create timer for publishing joint states (e.g., at 10Hz)
-        _timer = this->create_wall_timer(
-            std::chrono::milliseconds(100),
-            std::bind(&KinematicsNode::timer_callback, this));
-
-        RCLCPP_INFO(this->get_logger(), "Kinematics node initialized");
-    }
-
-private:
-    void _callback_desired_pose(const geometry_msgs::msg::Pose::SharedPtr msg)
-    {
-        RCLCPP_INFO(this->get_logger(), "Received new desired pose");
+        if (!_manipulator_kinematics) {
+            return;
+        }
         const kinematics::Translation<scalar_t> translation(msg->position.x, msg->position.y, msg->position.z);
         const kinematics::Rotation<scalar_t> rotation(msg->orientation.w, msg->orientation.x, msg->orientation.y, msg->orientation.z);
-        const kinematics::Pose<scalar_t> desired_pose(rotation, translation);
-        _manipulator_kinematics->update(desired_pose);
+        const kinematics::Pose<scalar_t> target_pose(rotation, translation);
+        _manipulator_kinematics->update(target_pose);
     }
 
-    void timer_callback()
+    void _callback_joint_positions(const sensor_msgs::msg::JointState::SharedPtr msg)
+    {
+        std::array<scalar_t, DOF> joint_positions;
+        std::array<scalar_t, DOF> joint_velocities;
+        std::array<scalar_t, DOF> joint_accelerations;
+        for (dof_size_t i = 0; i < DOF; ++i) {
+            joint_positions[i] = msg->position[i];
+            joint_velocities[i] = msg->velocity[i];
+            joint_accelerations[i] = msg->effort[i];
+        }   
+
+        if (!_manipulator_kinematics) {
+            _manipulator_kinematics.reset(new kinematics::SerialManipulator<scalar_t, DOF>(_cfg.robot_description_path, joint_positions));
+        }
+
+        _manipulator_kinematics->set_joint_positions(joint_positions);
+        _manipulator_kinematics->set_joint_velocities(joint_velocities);
+        _manipulator_kinematics->set_joint_accelerations(joint_accelerations);
+    }
+
+    void _timer_callback()
     {
         // Create and publish joint state message
         auto joint_state_msg = sensor_msgs::msg::JointState();
         joint_state_msg.header.stamp = this->now();
-        std::array<scalar_t, DOF> joint_positions = _manipulator_kinematics->data().joint_positions;
-        std::array<scalar_t, DOF> joint_velocities = _manipulator_kinematics->data().joint_velocities;
         // Set joint names (adjust these to match your robot's joint names)
         for (int i=0; i<DOF; ++i) {
             joint_state_msg.name.push_back("joint" + std::to_string(i+1));
@@ -63,23 +75,82 @@ private:
 
         // Set joint positions
         joint_state_msg.position.assign(
-            joint_positions.begin(),
-            joint_positions.end()
+            _manipulator_kinematics->get_target_joint_positions().begin(),
+            _manipulator_kinematics->get_target_joint_positions().end()
         );
         joint_state_msg.velocity.assign(
-            joint_velocities.begin(),
-            joint_velocities.end()
+            _manipulator_kinematics->get_target_joint_velocities().begin(),
+            _manipulator_kinematics->get_target_joint_velocities().end()
+        );
+        joint_state_msg.effort.assign(
+            _manipulator_kinematics->get_target_joint_accelerations().begin(),
+            _manipulator_kinematics->get_target_joint_accelerations().end()
         );
         // Publish the message
-        _pub_joint_positions->publish(joint_state_msg);
+        _pub_target_joint_positions->publish(joint_state_msg);
     }
+public:
+    KinematicsNode(std::string robot_description_path) 
+    : Node("kinematics_node")
+    {
+        _cfg.robot_description_path = robot_description_path;
+    }
+
+    bool initialize() {
+        // Create subscriptions
+        RCLCPP_INFO(this->get_logger(), "Starting kinematics node initialization...");
+        _sub_joint_states = this->create_subscription<sensor_msgs::msg::JointState>(
+            "joint_states", 10,
+            std::bind(&KinematicsNode::_callback_joint_positions, this, std::placeholders::_1));
+
+        // Wait for first joint states message
+        while (!_manipulator_kinematics && !g_interrupt_flag) {
+            RCLCPP_INFO(this->get_logger(), "Waiting for the first joint states message...");
+            rclcpp::spin_some(shared_from_this());
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+            if (g_interrupt_flag) {
+                RCLCPP_INFO(this->get_logger(), "Received interrupt, shutting down...");
+                return false;
+            }
+        }    
+
+        // Create remaining subscriptions and publishers
+        _sub_target_pose = this->create_subscription<geometry_msgs::msg::Pose>(
+            "target_poses", 10,
+            std::bind(&KinematicsNode::_callback_target_pose, this, std::placeholders::_1));
+
+        _pub_target_joint_positions = this->create_publisher<sensor_msgs::msg::JointState>(
+            "target_joint_states", 10);
+
+        _timer = this->create_wall_timer(
+            std::chrono::milliseconds(4),
+            std::bind(&KinematicsNode::_timer_callback, this));
+
+        RCLCPP_INFO(this->get_logger(), "Kinematics node initialized!");
+        return true;
+    }
+
 };
 
 int main(int argc, char** argv)
 {
+    signal(SIGINT, kill_this_node);
+    
     rclcpp::init(argc, argv);
-    auto node = std::make_shared<KinematicsNode>();
-    rclcpp::spin(node);
+    std::string robot_description_path = "/home/kai/Projects/timr/ros2_ws/src/kinematics/config/robot.json";
+    auto node = std::make_shared<KinematicsNode>(robot_description_path);
+    
+    if (!node->initialize()) {
+        RCLCPP_INFO(node->get_logger(), "Failed to initialize kinematics node.");
+        rclcpp::shutdown();
+        return 1;
+    }
+    
+    while (rclcpp::ok() && !g_interrupt_flag) {
+        rclcpp::spin_some(node);
+    }
+    
+    RCLCPP_INFO(node->get_logger(), "Shutting down kinematics node...");
     rclcpp::shutdown();
     return 0;
 }

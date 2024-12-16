@@ -182,18 +182,29 @@ struct SerialManipulatorConfig {
     jScalar error_gain{50};
     jScalar sampling_time_sec{0.0004};
     jScalar joint_damping{0.0001};
+    bool is_open_loop{false};
 };
 
 template<typename jScalar, dof_size_t dof>
 struct SerialManipulatorData {
     Pose<jScalar> base;
     Pose<jScalar> effector;
+    std::array<jScalar, dof> target_joint_positions{};
+    std::array<jScalar, dof> target_joint_velocities{};
+    std::array<jScalar, dof> target_joint_accelerations{};
     std::array<jScalar, dof> joint_positions{};
     std::array<jScalar, dof> joint_velocities{};
     std::array<jScalar, dof> joint_accelerations{};
+    std::array<jScalar, dof> joint_positions_limit_lower{};
+    std::array<jScalar, dof> joint_positions_limit_upper{};
+    std::array<jScalar, dof> joint_velocities_limit_lower{};
+    std::array<jScalar, dof> joint_velocities_limit_upper{};
+    std::array<jScalar, dof> joint_accelerations_limit_lower{};
+    std::array<jScalar, dof> joint_accelerations_limit_upper{};
+
     std::array<Pose<jScalar>, dof> joint_poses; // {joint1->joint2, joint2->joint3, joint3->joint4, ... , joint?->end}
     std::array<DualQuat<jScalar>, dof> joint_pose_derivatives; // {joint1->joint2, joint2->joint3, joint3->joint4, ... , joint?->end}
-    std::array<std::array<jScalar, dof>, 4> joint_limits;
+
 };
 
 template<typename jScalar, dof_size_t dof, typename>
@@ -208,7 +219,7 @@ protected:
                         const std::array<jScalar, dof>& joint_positions)
     {
         // Initialize joints
-        for (int i=0; i<dof; ++i){
+        for (dof_size_t i=0; i<dof; ++i){
             if (dhparams.back()[i] == 0){
                 const std::array<jScalar, 4> dharray {dhparams[0][i], dhparams[1][i], dhparams[2][i], dhparams[3][i]};
                 _pjoints[i].reset( static_cast<Joint<jScalar, void>*>(new RevoluteJoint<jScalar, void>(dharray)) );
@@ -220,7 +231,10 @@ protected:
             }
         }
 
-        _data.joint_limits = limits;
+        _data.joint_positions_limit_lower = limits[0];
+        _data.joint_positions_limit_upper = limits[1];
+        _data.joint_velocities_limit_lower = limits[2];
+        _data.joint_velocities_limit_upper = limits[3];
         _data.joint_positions = joint_positions;
         _update_kinematics();
 
@@ -256,21 +270,21 @@ public:
         // Accessing JSON data
         try {
             std::array<std::array<jScalar, dof>, 5> dh_params {
-                data["DH_params"]["theta"],
-                data["DH_params"]["d"],
-                data["DH_params"]["a"],
-                data["DH_params"]["alpha"],
-                data["DH_params"]["joint_types"]
+                data["spec"]["DH_params"]["theta"],
+                data["spec"]["DH_params"]["d"],
+                data["spec"]["DH_params"]["a"],
+                data["spec"]["DH_params"]["alpha"],
+                data["spec"]["DH_params"]["joint_types"]
             };
 
             std::array<std::array<jScalar, dof>, 4> limits {
-                data["joint_limits"]["min_joint_positions"],
-                data["joint_limits"]["max_joint_positions"],
-                data["joint_limits"]["min_joint_velocities"],
-                data["joint_limits"]["max_joint_velocities"]
+                data["spec"]["joint_limits"]["min_joint_positions"],
+                data["spec"]["joint_limits"]["max_joint_positions"],
+                data["spec"]["joint_limits"]["min_joint_velocities"],
+                data["spec"]["joint_limits"]["max_joint_velocities"]
             };
 
-            for (int i=0; i<6; ++i) {{
+            for (dof_size_t i=0; i<6; ++i) {{
                 dh_params[0][i] = dh_params[0][i] / 180. * M_PI;
                 dh_params[3][i] = dh_params[3][i] / 180. * M_PI;
                 limits[0][i] = limits[0][i] / 180. * M_PI;
@@ -280,11 +294,11 @@ public:
             }}
 
             SerialManipulatorConfig<jScalar> cfg;
-            cfg.translation_priority = data["solver_config"]["translation_priority"];
-            cfg.error_gain = data["solver_config"]["error_gain"];
-            cfg.joint_damping = data["solver_config"]["joint_damping"];
-            cfg.sampling_time_sec = data["solver_config"]["sampling_time_sec"];
-
+            cfg.translation_priority = data["spec"]["solver_config"]["translation_priority"];
+            cfg.error_gain = data["spec"]["solver_config"]["error_gain"];
+            cfg.joint_damping = data["spec"]["solver_config"]["joint_damping"];
+            cfg.sampling_time_sec = data["spec"]["solver_config"]["sampling_time_sec"];
+            cfg.is_open_loop = data["spec"]["solver_config"]["is_open_loop"];
             _construct(dh_params, limits, joint_positions);
             _cfg = cfg;
         } catch (json::exception& e) {
@@ -298,6 +312,7 @@ public:
     }
 
     void update(const Pose<jScalar>& desired_pose) {
+        _update_kinematics();
         USING_NAMESPACE_QPOASES;
         const Rotation<jScalar>& r_end = _data.joint_poses.back().rotation();
         const Translation<jScalar>& t_end = _data.joint_poses.back().translation();
@@ -306,7 +321,7 @@ public:
 
         std::array<Quat<jScalar>, dof> r_rd_derivatives;
         std::array<Quat<jScalar>, dof> t_derivatives;
-        for (int i=0; i<dof; ++i) {
+        for (dof_size_t i=0; i<dof; ++i) {
             r_rd_derivatives[i] = _data.joint_pose_derivatives[i].real().conj() * rd;
             t_derivatives[i] = 2 * (_data.joint_pose_derivatives[i].dual() * _data.joint_poses.back().real().conj() 
                                     + _data.joint_poses.back().dual() * _data.joint_pose_derivatives[i].real().conj() );
@@ -315,7 +330,7 @@ public:
         constexpr dof_size_t dof2 = dof * dof;
         // Initialize a zero array
         std::array<double, dof2> H {};
-        for (int i=0; i<dof; ++i) {
+        for (dof_size_t i=0; i<dof; ++i) {
             for (int j=0; j<dof; ++j) {
                 const double Ht = t_derivatives[i].dot( t_derivatives[j] );
                 const double Hr = r_rd_derivatives[i].dot( r_rd_derivatives[j] );
@@ -330,7 +345,7 @@ public:
         const Quat<jScalar> r_rd_err = __closest_invariant_rotation_error(r_end, rd);
         // Initialize a zero array
         std::array<double, dof> g {};
-        for (int i=0; i<dof; ++i) {
+        for (dof_size_t i=0; i<dof; ++i) {
             const double ct = _cfg.error_gain * t_err.dot(t_derivatives[i]);
             const double cr = _cfg.error_gain * r_rd_err.dot(r_rd_derivatives[i]);
             g[i] = _cfg.translation_priority * ct + (1-_cfg.translation_priority) * cr;
@@ -338,26 +353,22 @@ public:
 
         // Initialize a zero array
         std::array<double, dof2> constraints {};
-        for (int i=0; i<dof; ++i) {
+        for (dof_size_t i=0; i<dof; ++i) {
             for (int j=0; j<dof; ++j) {
                 if (i==j)
                     constraints[i*dof+j] = 1;
             }
         }
 
-        const std::array<jScalar, dof>& min_joint_positions = _data.joint_limits[0];
-        const std::array<jScalar, dof>& max_joint_positions = _data.joint_limits[1];
-        const std::array<jScalar, dof>& min_joint_velocities = _data.joint_limits[2];
-        const std::array<jScalar, dof>& max_joint_velocities = _data.joint_limits[3];
         std::array<double, dof> lower_constraint_bound;
         std::array<double, dof> upper_constraint_bound;
         std::array<double, dof> lower_bound;
         std::array<double, dof> upper_bound;
-        for (int i=0; i<dof; ++i) {
-            lower_constraint_bound[i] = min_joint_positions[i] - _data.joint_positions[i];
-            upper_constraint_bound[i] = max_joint_positions[i] - _data.joint_positions[i];
-            lower_bound[i] = min_joint_velocities[i];
-            upper_bound[i] = max_joint_velocities[i];
+        for (dof_size_t i=0; i<dof; ++i) {
+            lower_constraint_bound[i] = _data.joint_positions_limit_lower[i] - _data.joint_positions[i];
+            upper_constraint_bound[i] = _data.joint_positions_limit_upper[i] - _data.joint_positions[i];
+            lower_bound[i] = _data.joint_velocities_limit_lower[i];
+            upper_bound[i] = _data.joint_velocities_limit_upper[i];
         }
 
         const double* H_raw = H.data();
@@ -393,27 +404,44 @@ public:
         double xOpt[dof];
         qp.getPrimalSolution(xOpt);
         // update joint positions
-        for (int i=0; i<dof; ++i) {
-            _data.joint_accelerations[i] = (xOpt[i] - _data.joint_velocities[i]) / _cfg.sampling_time_sec;
-            _data.joint_velocities[i] = xOpt[i];
-            _data.joint_positions[i] += xOpt[i] * _cfg.sampling_time_sec;
+        for (dof_size_t i=0; i<dof; ++i) {
+            _data.target_joint_accelerations[i] = (xOpt[i] - _data.target_joint_velocities[i]) / _cfg.sampling_time_sec;
+            _data.target_joint_velocities[i] = xOpt[i];
+            _data.target_joint_positions[i] += xOpt[i] * _cfg.sampling_time_sec;
         }
-        _update_kinematics();
+        if (_cfg.is_open_loop) {
+            set_joint_positions(_data.target_joint_positions);
+            set_joint_velocities(_data.target_joint_velocities);
+            set_joint_accelerations(_data.target_joint_accelerations);
+        }
     }
 
+    // setters
     template<typename Scalar>
     inline void set_base(const Pose<Scalar>& base) noexcept { _data.base = base; }
     template<typename Scalar>
     inline void set_effector(const Pose<Scalar>& effector) noexcept { _data.effector = effector; }
     template<typename Scalar>
     inline void set_config(const SerialManipulatorConfig<Scalar>& config) noexcept { _cfg = config; }
-    // query
-    inline std::array<jScalar, dof> joint_positions() const noexcept {return _data.joint_positions;}
-    inline Pose<jScalar> end_pose() const noexcept {return _data.joint_poses.back();}
-    inline dof_size_t DoF() const noexcept {return dof;}
-    inline SerialManipulatorConfig<jScalar>& config() noexcept {return _cfg;}
-    inline const SerialManipulatorConfig<jScalar>& config() const noexcept {return _cfg;}
-    inline const SerialManipulatorData<jScalar, dof>& data() const noexcept {return _data;}
+    inline void set_open_loop(const bool is_open_loop) noexcept { _cfg.is_open_loop = is_open_loop; }
+    template<typename Scalar>
+    inline void set_joint_positions(const std::array<Scalar, dof>& joint_positions) noexcept {_data.joint_positions = joint_positions;}
+    template<typename Scalar>
+    inline void set_joint_velocities(const std::array<Scalar, dof>& joint_velocities) noexcept {_data.joint_velocities = joint_velocities;}
+    template<typename Scalar>
+    inline void set_joint_accelerations(const std::array<Scalar, dof>& joint_accelerations) noexcept {_data.joint_accelerations = joint_accelerations;}
+
+    // getters
+    inline const std::array<jScalar, dof>&              get_target_joint_positions() const noexcept {return _data.target_joint_positions;}
+    inline const std::array<jScalar, dof>&              get_target_joint_velocities() const noexcept {return _data.target_joint_velocities;}
+    inline const std::array<jScalar, dof>&              get_target_joint_accelerations() const noexcept {return _data.target_joint_accelerations;}
+    inline const std::array<jScalar, dof>&              get_joint_positions() const noexcept {return _data.joint_positions;}
+    inline const std::array<jScalar, dof>&              get_joint_velocities() const noexcept {return _data.joint_velocities;}
+    inline const std::array<jScalar, dof>&              get_joint_accelerations() const noexcept {return _data.joint_accelerations;}
+    inline const Pose<jScalar>&                         get_end_pose() const noexcept {return _data.joint_poses.back();}
+    inline dof_size_t                                   get_dof() const noexcept {return dof;}
+    inline const SerialManipulatorConfig<jScalar>&      get_config() const noexcept {return _cfg;}
+    inline const SerialManipulatorData<jScalar, dof>&   get_data() const noexcept {return _data;}
 
 private:
     void _update_kinematics() {
