@@ -1,0 +1,16 @@
+{
+    "apiVersion": "serialmanipulatordriver.timr.com/v1alpha1",
+    "metadata": {
+        "name": "robot",
+        "description": "Robot description"
+    },
+    "kind": "SerialManipulatorDriver",
+    "spec": {
+        "driver_config": {
+            "microsteps": [8, 8, 8, 8, 8, 8],
+            "port_names": ["/dev/ttyUSB0"],
+            "reducer_ratios": [50, 27, 36, 27, 36, 51],
+            "CW_directions": [true, false, false, true, true, false]
+        }
+    }
+} 

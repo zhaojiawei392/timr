@@ -4,7 +4,7 @@
         "name": "robot",
         "description": "Robot description"
     },
-    "kind": "serial_manipulator",
+    "kind": "SerialManipulator",
     "spec": {
         "DH_params":{
             "theta":        [0,       180,      -90,      0,        0,      0],
@@ -25,10 +25,6 @@
             "joint_damping": 0.0001,
             "sampling_time_sec": 0.004,
             "is_open_loop": false
-        },
-        "driver_config": {
-            "microsteps": [8, 8, 8, 8, 8, 8],
-            "usb_ports": ["/dev/ttyUSB0"]
         }
     }
 } 

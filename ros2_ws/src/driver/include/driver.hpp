@@ -4,6 +4,12 @@
 #include <iostream>
 #include <array>
 #include <csignal>
+#include <vector>
+#include <thread>
+#include <chrono>
+#include <sstream>
+#include <nlohmann/json.hpp>
+#include <fstream>
 
 namespace driver {
 
@@ -139,22 +145,99 @@ public:
 };
 
 template<typename dScalar, size_t dof, typename = std::enable_if_t<std::is_floating_point_v<dScalar>>>
-class RobotDriver {
+class SerialManipulatorDriver {
 protected:
+    boost::asio::io_service _io;
+    std::vector<std::unique_ptr<boost::asio::serial_port>> _port_objects;
     std::array<boost::asio::serial_port*, dof> _ports;
     std::array<std::unique_ptr<JointDriver<dScalar>>, dof> _joints;
+    std::array<uint8_t, dof> _microsteps {8,8,8,8,8,8};
+    std::array<uint8_t, dof> _reducer_ratios {1,1,1,1,1,1};
+    std::array<bool, dof> _is_clockwise_positive {true,true,true,true,true,true};
+
 public:
-    explicit RobotDriver(std::array<boost::asio::serial_port*, dof> ports, std::array<uint8_t, dof> microsteps, std::array<uint8_t, dof> reducer_ratios, std::array<bool, dof> CW_directions)
-    : _ports(ports), _joints() {
-        for (auto port: _ports) {
+    explicit SerialManipulatorDriver(const std::string& robot_description_path) {
+        using json = nlohmann::json;
+        // Open the JSON file
+        std::ifstream file(robot_description_path);
+
+        // Check if the file opened successfully
+        if (!file.is_open()) {
+            throw std::runtime_error("Failed to open the file: " + robot_description_path);
+        }
+
+        // Parse the JSON file
+        json data;
+        try {
+            file >> data;
+        } catch (json::parse_error& e) {
+            throw std::runtime_error("Parse error: " + std::string(e.what()));
+        }
+
+        // Extract driver configuration
+        try {
+            const auto& driver_config = data["spec"]["driver_config"];
+            
+            std::vector<std::string> port_names = driver_config["port_names"].get<std::vector<std::string>>();
+            std::array<uint8_t, dof> microsteps = driver_config["microsteps"].get<std::array<uint8_t, dof>>();
+            std::array<uint8_t, dof> reducer_ratios = driver_config["reducer_ratios"].get<std::array<uint8_t, dof>>();
+            std::array<bool, dof> CW_directions = driver_config["CW_directions"].get<std::array<bool, dof>>();
+
+            _construct(port_names, microsteps, reducer_ratios, CW_directions);
+            
+        } catch (json::exception& e) {
+            throw std::runtime_error("Error parsing driver configuration: " + std::string(e.what()));
+        }
+    }
+
+    void _construct(const std::vector<std::string>& port_names,
+                    const std::array<uint8_t, dof>& microsteps,
+                    const std::array<uint8_t, dof>& reducer_ratios,
+                    const std::array<bool, dof>& CW_directions) {
+        _microsteps = microsteps;
+        _reducer_ratios = reducer_ratios;
+        _is_clockwise_positive = CW_directions;
+        
+        // Create serial ports
+        for (const auto& port_name : port_names) {
+            _port_objects.push_back(
+                std::make_unique<boost::asio::serial_port>(_io, port_name)
+            );
+        }
+
+        // If only one port is provided, use it for all joints
+        boost::asio::serial_port* default_port = _port_objects[0].get();
+        _ports.fill(default_port);
+
+        // Configure all ports
+        for (auto& port : _port_objects) {
             port->set_option(boost::asio::serial_port_base::baud_rate(115200));
             port->set_option(boost::asio::serial_port_base::character_size(8));
             port->set_option(boost::asio::serial_port_base::parity(boost::asio::serial_port_base::parity::none));
         }
+
+        // Initialize joints
         for (size_t i = 0; i < dof; ++i) {
-            _joints[i] = std::make_unique<JointDriver<dScalar>>(_ports[i], i+1, microsteps[i], reducer_ratios[i], CW_directions[i]);
+            _joints[i] = std::make_unique<JointDriver<dScalar>>(_ports[i], i+1, _microsteps[i], _reducer_ratios[i], _is_clockwise_positive[i]);
         }
     }
+
+    ~SerialManipulatorDriver() {
+        for (auto& port : _port_objects) {
+            if (port->is_open()) {
+                try {
+                    boost::system::error_code ec;
+                    port->close(ec);
+                    if (!ec) {
+                        std::cout << "Port closed successfully" << std::endl;
+                    }
+                } catch (...) {
+                    std::cerr << "Error closing port" << std::endl;
+                }
+            }
+        }
+    }
+
     inline void emergency_stop() {
         for (size_t i = 0; i < dof; ++i) {
             _joints[i]->emergency_stop();
@@ -190,54 +273,5 @@ public:
         return joint_velocities;
     }
 };
-
-boost::asio::io_service io;
-boost::asio::serial_port port0(io, "/dev/ttyUSB0");
-// boost::asio::serial_port port1(io, "/dev/ttyUSB1");
-// boost::asio::serial_port port2(io, "/dev/ttyUSB2");
-std::array<boost::asio::serial_port*, 6> ports = {&port0, &port0, &port0, &port0, &port0, &port0};
-
-const std::array<uint8_t, 6> microsteps = {8, 8, 8, 8, 8, 8};
-const std::array<uint8_t, 6> reducer_ratios = {50, 27, 36, 27, 36, 51};
-const std::array<bool, 6> is_clockwise_positive = {true, false, false, true, true, false};
-
-RobotDriver<double, 6> robotdriver0(ports, microsteps, reducer_ratios, is_clockwise_positive);
-
-void closePorts() {
-    // Cleanup code here
-    if (port0.is_open()) {
-        try {
-            boost::system::error_code ec;
-            port0.close(ec);
-            if (!ec) {
-                std::cout << "Port /dev/ttyUSB0 closed successfully" << std::endl;
-            }
-        } catch (...) {
-            std::cerr << "Error closing port" << std::endl;
-        }
-    }
-    // if (port1.is_open()) {
-    //     try {
-    //         boost::system::error_code ec;
-    //         port0.close(ec);
-    //         if (!ec) {
-    //             std::cout << "Port /dev/ttyUSB1 closed successfully" << std::endl;
-    //         }
-    //     } catch (...) {
-    //         std::cerr << "Error closing port" << std::endl;
-    //     }
-    // }
-    // if (port2.is_open()) {
-    //     try {
-    //         boost::system::error_code ec;
-    //         port0.close(ec);
-    //         if (!ec) {
-    //             std::cout << "Port /dev/ttyUSB2 closed successfully" << std::endl;
-    //         }
-    //     } catch (...) {
-    //         std::cerr << "Error closing port" << std::endl;
-    //     }
-    // }
-}
 
 }
