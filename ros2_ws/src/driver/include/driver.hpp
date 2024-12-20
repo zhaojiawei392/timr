@@ -21,6 +21,7 @@ protected:
     uint8_t _microsteps;
     uint8_t _reducer_ratio;
     bool _is_clockwise_positive;
+
     template<std::size_t size>
     std::string hex_to_str(const std::array<uint8_t, size>& hex){
         std::ostringstream oss;
@@ -179,6 +180,12 @@ public:
             const auto& driver_config = data["spec"]["driver_config"];
             
             std::vector<std::string> port_names = driver_config["port_names"].get<std::vector<std::string>>();
+            
+            // Add validation
+            if (port_names.empty()) {
+                throw std::runtime_error("No port names provided in configuration");
+            }
+            
             std::array<uint8_t, dof> microsteps = driver_config["microsteps"].get<std::array<uint8_t, dof>>();
             std::array<uint8_t, dof> reducer_ratios = driver_config["reducer_ratios"].get<std::array<uint8_t, dof>>();
             std::array<bool, dof> CW_directions = driver_config["CW_directions"].get<std::array<bool, dof>>();
@@ -188,6 +195,7 @@ public:
         } catch (json::exception& e) {
             throw std::runtime_error("Error parsing driver configuration: " + std::string(e.what()));
         }
+        file.close();
     }
 
     void _construct(const std::vector<std::string>& port_names,
@@ -223,6 +231,8 @@ public:
     }
 
     ~SerialManipulatorDriver() {
+        homing();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         for (auto& port : _port_objects) {
             if (port->is_open()) {
                 try {
@@ -271,6 +281,13 @@ public:
             joint_velocities[i] = _joints[i]->get_velocity();
         }
         return joint_velocities;
+    }
+    inline std::array<dScalar, dof> get_joint_accelerations() {
+        std::array<dScalar, dof> joint_accelerations;
+        for (size_t i = 0; i < dof; ++i) {
+            joint_accelerations[i] = 0;
+        }
+        return joint_accelerations;
     }
 };
 

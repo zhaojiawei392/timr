@@ -20,7 +20,7 @@
             "max_joint_velocities":[100, 200, 300, 400, 500, 600]
         },
         "solver_config": {
-            "translation_priority": 0.9999,
+            "translation_priority": 1,
             "error_gain": 50,
             "joint_damping": 0.0001,
             "sampling_time_sec": 0.004,

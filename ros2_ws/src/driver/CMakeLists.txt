@@ -11,6 +11,11 @@ find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(Boost COMPONENTS system REQUIRED)
+if (NOT Boost_FOUND)
+    message(FATAL_ERROR "Boost not found. Install Boost and ensure the system component is available.")
+endif()
+
 
 add_executable(driver_node src/driver-node.cpp)
 target_include_directories(driver_node PUBLIC
@@ -28,6 +33,7 @@ ament_target_dependencies(driver_node
 
 target_link_libraries(driver_node 
     ${CMAKE_CURRENT_SOURCE_DIR}/external/coppeliasim/share/libremoteApiCoppeliasim.so
+    Boost::system
 )
 
 install(TARGETS
