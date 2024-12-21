@@ -1,6 +1,6 @@
-[submodule "ros2_ws/src/kinematics/external/qpOASES"]
-	path = ros2_ws/src/kinematics/external/qpOASES
-	url = git@github.com:zhaojiawei392/qpOASES.git
-[submodule "ros2_ws/src/kinematics/external/json"]
-	path = ros2_ws/src/kinematics/external/json
-	url = git@github.com:zhaojiawei392/json.git
+[submodule "ros2_ws/src/external/qpOASES"]
+	path = ros2_ws/src/external/qpOASES
+	url = https://github.com/zhaojiawei392/qpOASES.git
+[submodule "ros2_ws/src/external/json"]
+	path = ros2_ws/src/external/json
+	url = https://github.com/zhaojiawei392/json.git
