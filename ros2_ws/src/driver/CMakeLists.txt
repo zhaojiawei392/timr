@@ -8,8 +8,6 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(std_msgs REQUIRED)
-find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(Boost COMPONENTS system REQUIRED)
 if (NOT Boost_FOUND)
@@ -26,8 +24,6 @@ target_include_directories(driver_node PUBLIC
 
 ament_target_dependencies(driver_node
   rclcpp
-  std_msgs
-  geometry_msgs
   sensor_msgs
 )
 

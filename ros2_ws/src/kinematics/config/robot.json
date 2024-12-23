@@ -16,15 +16,17 @@
         "joint_limits":{
             "min_joint_positions":[-180, 0, 0, -175, -120, -175],
             "max_joint_positions":[180, 175, 150, 175, 120, 175],
-            "min_joint_velocities":[-100, -200, -300, -400, -500, -600],
-            "max_joint_velocities":[100, 200, 300, 400, 500, 600]
+            "min_joint_velocities":[-1, -2, -3, -4, -5, -6],
+            "max_joint_velocities":[1, 2, 3, 4, 5, 6],
+            "min_joint_accelerations":[-1, -2, -3, -4, -5, -6],
+            "max_joint_accelerations":[1, 2, 3, 4, 5, 6]
         },
         "solver_config": {
             "translation_priority": 1,
             "error_gain": 50,
             "joint_damping": 0.0001,
-            "sampling_time_sec": 0.004,
-            "is_open_loop": false
+            "sampling_time_sec": 0.04,
+            "is_open_loop": true
         }
     }
 } 

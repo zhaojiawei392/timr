@@ -1,7 +1,5 @@
 #include "driver.hpp"
 #include <rclcpp/rclcpp.hpp>
-#include <geometry_msgs/msg/pose.hpp>
-#include <geometry_msgs/msg/pose_stamped.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <array>
 #include <memory>
@@ -9,13 +7,10 @@
 #include <thread>
 #include <fstream>
 
-using scalar_t = double;
-using dof_size_t = uint8_t;
-constexpr dof_size_t DOF = 6;
-volatile sig_atomic_t g_interrupt_flag = 0;
+volatile sig_atomic_t kill_this_node = 0;
 
-void kill_this_node(int signum) {
-    g_interrupt_flag = 1;
+void signal_handler(int signum) {
+    kill_this_node = 1;
 }
 
 extern "C" {
@@ -30,26 +25,20 @@ class DriverNode : public rclcpp::Node
 
 private:
     std::string _robot_description_path;
-    std::unique_ptr<driver::SerialManipulatorDriver<scalar_t, DOF>> _driver;
+    std::unique_ptr<driver::SerialManipulatorDriver> _driver;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr _pub_joint_state;
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr _sub_target_joint_state;
     rclcpp::TimerBase::SharedPtr _timer;
     sensor_msgs::msg::JointState _cached_joint_state_msg;
 
-    void _pub_joint_states() {
+    void _callback_timer() {
         _cached_joint_state_msg.header.stamp = now();
         
         try {
             // Get current joint positions and velocities with safety checks
-            auto positions = _driver->get_joint_positions();
-            auto velocities = _driver->get_joint_velocities();
-            auto accelerations = _driver->get_joint_accelerations();
-
-            if (positions.size() != DOF || velocities.size() != DOF || accelerations.size() != DOF) {
-                RCLCPP_ERROR(get_logger(), "Invalid joint data sizes: pos=%zu, vel=%zu, acc=%zu", 
-                    positions.size(), velocities.size(), accelerations.size());
-                return;
-            }
+            const auto& positions = _driver->get_joint_positions();
+            const auto& velocities = _driver->get_joint_velocities();
+            const auto& accelerations = _driver->get_joint_accelerations();
 
             // Copy directly into existing vectors
             std::copy(positions.begin(), positions.end(), _cached_joint_state_msg.position.begin());
@@ -63,22 +52,21 @@ private:
     }
 
     void _callback_target_joint_state(const sensor_msgs::msg::JointState::SharedPtr msg) {
-        if (msg->position.size() != DOF || msg->velocity.size() != DOF) {
-            RCLCPP_ERROR(get_logger(), "Invalid joint state message size");
-            return;
-        }
-
         // Convert vectors to arrays
-        std::array<double, DOF> positions;
-        std::array<double, DOF> velocities;
-        std::array<uint8_t, DOF> accelerations;  // Default acceleration values
+        std::array<scalar_t, DOF> positions;
+        std::array<scalar_t, DOF> velocities;
+        std::array<scalar_t, DOF> accelerations;  // Default acceleration values
         
         std::copy(msg->position.begin(), msg->position.end(), positions.begin());
         std::copy(msg->velocity.begin(), msg->velocity.end(), velocities.begin());
-        accelerations.fill(0xFF);  // Set default acceleration
+        std::copy(msg->effort.begin(), msg->effort.end(), accelerations.begin());
+
+        _driver->set_target_joint_positions(positions);
+        _driver->set_target_joint_velocities(velocities);
+        _driver->set_target_joint_accelerations(accelerations);
 
         try {
-            _driver->position_control(positions, velocities, accelerations);
+            _driver->update();
         } catch (const std::exception& e) {
             RCLCPP_ERROR(get_logger(), "Error in position control: %s", e.what());
         }
@@ -98,7 +86,7 @@ public:
         _cached_joint_state_msg.effort.resize(DOF);  // Make sure effort is also resized
         
         // Set joint names
-        for (size_t i = 0; i < DOF; ++i) {
+        for (dof_size_t i = 0; i < DOF; ++i) {
             _cached_joint_state_msg.name[i] = "joint" + std::to_string(i + 1);
         }
 
@@ -115,7 +103,7 @@ public:
                 RCLCPP_INFO(get_logger(), "Attempting to create driver instance...");
                 RCLCPP_INFO(get_logger(), "Using robot description: %s", _robot_description_path.c_str());
                 
-                _driver = std::make_unique<driver::SerialManipulatorDriver<scalar_t, DOF>>(_robot_description_path);
+                _driver = std::make_unique<driver::SerialManipulatorDriver>(_robot_description_path);
                 
                 if (!_driver) {
                     RCLCPP_ERROR(get_logger(), "Failed to create driver instance");
@@ -125,27 +113,7 @@ public:
             }
             
             RCLCPP_INFO(get_logger(), "Initializing driver...");
-            std::array<scalar_t, DOF> positions;
-            int retry_count = 0;
-            const int max_retries = 5;
-            
-            while (retry_count < max_retries) {
-                try {
-                    positions = _driver->get_joint_positions();
-                    if (positions.size() == DOF) {
-                        break;
-                    }
-                } catch (const std::exception& e) {
-                    RCLCPP_WARN(get_logger(), "Retry %d: Failed to get positions: %s", retry_count + 1, e.what());
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-                retry_count++;
-            }
-            
-            if (retry_count >= max_retries) {
-                RCLCPP_ERROR(get_logger(), "Failed to get initial joint positions after %d attempts", max_retries);
-                return false;
-            }
+            std::array<scalar_t, DOF> positions = _driver->get_joint_positions();
             
             RCLCPP_INFO(get_logger(), "Initial joint positions: %f, %f, %f, %f, %f, %f", 
                         positions[0], positions[1], positions[2], positions[3], positions[4], positions[5]);
@@ -162,7 +130,7 @@ public:
             // Create timer for publishing current joint states
             _timer = create_wall_timer(
                 std::chrono::milliseconds(10),  // 100Hz
-                std::bind(&DriverNode::_pub_joint_states, this));
+                std::bind(&DriverNode::_callback_timer, this));
             RCLCPP_INFO(get_logger(), "Driver node Initialized");
             return true;
         } catch (const std::exception& e) {
@@ -175,7 +143,7 @@ public:
 
 int main(int argc, char** argv)
 {
-    signal(SIGINT, kill_this_node);
+    signal(SIGINT, signal_handler);
     
     rclcpp::init(argc, argv);
     std::string robot_description_path = "/home/kai/Projects/timr/ros2_ws/src/driver/config/robot.json";
@@ -187,7 +155,7 @@ int main(int argc, char** argv)
         return 1;
     }
     
-    while (rclcpp::ok() && !g_interrupt_flag) {
+    while (rclcpp::ok() && !kill_this_node) {
         rclcpp::spin_some(node);
     }
     

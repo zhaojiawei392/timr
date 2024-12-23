@@ -22,7 +22,7 @@
 #include <array>
 #include <cstdint>
 
-namespace kinematics
+namespace dqpose
 {
 
 constexpr int PRINT_PRECISION = 12;

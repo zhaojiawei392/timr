@@ -4,3 +4,5 @@ install/
 log/
 legacy/
 z-legacy/
+genesis-env/
+venv/
