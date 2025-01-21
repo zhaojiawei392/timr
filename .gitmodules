@@ -4,3 +4,6 @@
 [submodule "ros2_ws/src/external/json"]
 	path = ros2_ws/src/external/json
 	url = https://github.com/zhaojiawei392/json.git
+[submodule "ros2_ws/src/external/yaml"]
+	path = ros2_ws/src/external/yaml
+	url = git@github.com:zhaojiawei392/yaml-cpp.git

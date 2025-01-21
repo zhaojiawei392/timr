@@ -10,7 +10,6 @@
 #include <sstream>
 #include <nlohmann/json.hpp>
 #include <fstream>
-#include <sensor_msgs/msg/joint_state.hpp>
 
 using dof_size_t = uint8_t;
 using scalar_t = double;
@@ -37,21 +36,22 @@ protected:
         }
         return oss.str();
     }
-    inline bool set_microsteps(uint8_t microsteps) {
+    inline bool _set_microsteps(uint8_t microsteps) {
         std::array<uint8_t, 6> code = {_addr, 0x84, 0x8A, 0x01, microsteps, 0x6B};
-        std::array<uint8_t, 4> response;
         boost::asio::write(*_port, boost::asio::buffer(code, code.size()));
-        boost::asio::read(*_port, boost::asio::buffer(response, response.size()));
-        std::array<uint8_t, 4> success = {_addr, 0x84, 0x02, 0x6B};
-        uint32_t* response_hex = reinterpret_cast<uint32_t*>(response.data());
-        uint32_t* success_hex = reinterpret_cast<uint32_t*>(success.data());
+        // std::array<uint8_t, 4> response;
+        // boost::asio::read(*_port, boost::asio::buffer(response, response.size()));
+        // std::array<uint8_t, 4> success = {_addr, 0x84, 0x02, 0x6B};
+        // uint32_t* response_hex = reinterpret_cast<uint32_t*>(response.data());
+        // uint32_t* success_hex = reinterpret_cast<uint32_t*>(success.data());
         
-        return (*response_hex == *success_hex);
+        // return (*response_hex == *success_hex);
+        return true;
     }
 public:
     explicit JointDriver(boost::asio::serial_port* port, uint8_t addr, uint8_t microsteps, uint8_t reducer_ratio, bool reverse_direction)
     : _port(port), _addr(addr), _microsteps(microsteps), _reducer_ratio(reducer_ratio), _is_clockwise_positive(reverse_direction) {
-        set_microsteps( _microsteps );
+        _set_microsteps( _microsteps );
     }
     inline scalar_t get_position() {
         std::array<uint8_t, 3> code = {_addr, 0x36, 0x6B};
@@ -132,7 +132,6 @@ public:
     inline void pos_control(scalar_t pos, scalar_t vel, scalar_t acc, bool wait_sync=false) {
         uint16_t rpm_hex = static_cast<uint16_t>(std::abs(vel) / M_PI / 2. * 60. * _reducer_ratio);
         uint8_t acc_hex = static_cast<uint8_t>(std::abs(acc) * 0xFF);
-        if (acc_hex == 0) acc_hex = 0x01;
         const uint8_t* p_rpm = reinterpret_cast<const uint8_t*>(&rpm_hex);
         const scalar_t step_size = 1.8 / _microsteps / 180 * M_PI;
         const uint32_t impulse_number = std::abs(pos) / step_size * _reducer_ratio;
@@ -174,7 +173,6 @@ protected:
         _microsteps = microsteps;
         _reducer_ratios = reducer_ratios;
         _reverse_directions = reverse_directions;
-        
         // Create serial ports
         for (const auto& port_name : port_names) {
             _port_objects.push_back(
@@ -192,7 +190,6 @@ protected:
             port->set_option(boost::asio::serial_port_base::character_size(8));
             port->set_option(boost::asio::serial_port_base::parity(boost::asio::serial_port_base::parity::none));
         }
-
         // Initialize joints
         for (dof_size_t i = 0; i < DOF; ++i) {
             _joints[i] = std::make_unique<JointDriver>(_ports[i], i+1, _microsteps[i], _reducer_ratios[i], _reverse_directions[i]);
@@ -202,19 +199,19 @@ protected:
     inline void _get_joint_positions() {
         for (dof_size_t i = 0; i < DOF; ++i) {
             _joint_positions[i] = _joints[i]->get_position();
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        // std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
     }
     inline void _get_joint_velocities() {
         for (dof_size_t i = 0; i < DOF; ++i) {
             _joint_velocities[i] = _joints[i]->get_velocity();
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        // std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
     }
     inline void _get_joint_accelerations() {
         for (dof_size_t i = 0; i < DOF; ++i) {
             _joint_accelerations[i] = 0;
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        // std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
     }
 public:
@@ -285,14 +282,14 @@ public:
     inline void emergency_stop() {
         for (dof_size_t i = 0; i < DOF; ++i) {
             _joints[i]->emergency_stop();
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        // std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
         std::cout<< "Emergency stop triggered!" << std::endl;
     }
     inline void position_control(std::array<scalar_t, DOF> positions, std::array<scalar_t, DOF> velocities, std::array<scalar_t, DOF> accelerations) {
         for (dof_size_t i = 0; i < DOF; ++i) {
-            _joints[i]->pos_control(positions[i], velocities[i], 1);
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            _joints[i]->pos_control(positions[i], velocities[i], 0);
+            // std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
     }
     inline void homing(std::array<scalar_t, DOF> velocities = {10,10,10,10,10,10}, 

@@ -8,8 +8,8 @@
     "spec": {
         "driver_config": {
             "microsteps": [8, 8, 8, 8, 8, 8],
-            "port_names": ["/dev/ttyUSB0"],
-            "reducer_ratios": [50, 27, 36, 27, 36, 51],
+            "port_names": ["/dev/ttyACM0"],
+            "reducer_ratios": [50, 27, 36, 36, 36, 51],
             "reverse_directions": [true, false, false, true, true, false]
         }
     }
