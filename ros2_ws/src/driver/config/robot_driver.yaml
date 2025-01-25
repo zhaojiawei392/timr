@@ -1,0 +1,15 @@
+apiVersion: serialmanipulatordriver.timr.io/v1alpha1
+metadata:
+  name: robotDriver
+  description: Robot driver configuration
+kind: SerialManipulatorDriver
+spec:
+  jointDescriptionPaths:
+    - /home/kai/ros2_ws/src/driver/config/joint1.yaml
+    - /home/kai/ros2_ws/src/driver/config/joint2.yaml
+    - /home/kai/ros2_ws/src/driver/config/joint3.yaml
+    - /home/kai/ros2_ws/src/driver/config/joint4.yaml
+    - /home/kai/ros2_ws/src/driver/config/joint5.yaml
+    - /home/kai/ros2_ws/src/driver/config/joint6.yaml
+  canConfig:
+    canInterface: can0

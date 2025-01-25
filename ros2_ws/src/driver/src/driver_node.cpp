@@ -1,31 +1,36 @@
-#include "driver.hpp"
+// ROS2 Headers
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
+
+// Project Headers
+#include "robot_driver.hpp"
+
+// Third-party Libraries
+#include <yaml-cpp/yaml.h>
+
+// C++ Standard Library
 #include <array>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <signal.h>
 #include <thread>
-#include <fstream>
+
+namespace timr {
+
+namespace driver {
 
 volatile sig_atomic_t kill_this_node = 0;
 
-void signal_handler(int signum) {
+void signal_handler([[maybe_unused]] int signum) {
     kill_this_node = 1;
-}
-
-extern "C" {
-    #define NON_MATLAB_PARSING
-    #define MAX_EXT_API_CONNECTIONS 255
-    #define NO_NOT_USE_SHARED_MEMORY
-    #include "extApi.h"
 }
 
 class DriverNode : public rclcpp::Node
 {
 
 private:
-    std::string _robot_description_path;
-    std::unique_ptr<driver::SerialManipulatorDriver> _driver;
+    std::unique_ptr<timr::driver::SerialManipulatorDriver> _driver;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr _pub_joint_state;
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr _sub_target_joint_state;
     rclcpp::TimerBase::SharedPtr _timer;
@@ -38,12 +43,10 @@ private:
             // Get current joint positions and velocities with safety checks
             const auto& positions = _driver->get_joint_positions();
             const auto& velocities = _driver->get_joint_velocities();
-            const auto& accelerations = _driver->get_joint_accelerations();
 
             // Copy directly into existing vectors
             std::copy(positions.begin(), positions.end(), _cached_joint_state_msg.position.begin());
             std::copy(velocities.begin(), velocities.end(), _cached_joint_state_msg.velocity.begin());
-            std::copy(accelerations.begin(), accelerations.end(), _cached_joint_state_msg.effort.begin());
             
             _pub_joint_state->publish(_cached_joint_state_msg);
         } catch (const std::exception& e) {
@@ -51,34 +54,31 @@ private:
         }
     }
 
-    void _callback_target_joint_state(const sensor_msgs::msg::JointState::SharedPtr msg) {
+    void _callback_target_joint_states(const sensor_msgs::msg::JointState::SharedPtr msg) {
         // Convert vectors to arrays
         std::array<scalar_t, DOF> positions;
         std::array<scalar_t, DOF> velocities;
-        std::array<scalar_t, DOF> accelerations;  // Default acceleration values
+        std::array<scalar_t, DOF> accelerations;
         
         std::copy(msg->position.begin(), msg->position.end(), positions.begin());
         std::copy(msg->velocity.begin(), msg->velocity.end(), velocities.begin());
-        std::copy(msg->effort.begin(), msg->effort.end(), accelerations.begin());
-
-        _driver->set_target_joint_positions(positions);
-        _driver->set_target_joint_velocities(velocities);
-        _driver->set_target_joint_accelerations(accelerations);
+        accelerations.fill(1);
 
         try {
-            _driver->update();
+            _driver->position_control(positions, velocities, accelerations);
         } catch (const std::exception& e) {
             RCLCPP_ERROR(get_logger(), "Error in position control: %s", e.what());
         }
     }
 public:
-    DriverNode(const std::string& robot_description_path)
-    : Node("driver_node"), _robot_description_path(robot_description_path)
+    DriverNode()
+    : Node("driver_node")
     {
         RCLCPP_INFO(this->get_logger(), "Driver node Created");
     }
     
-    bool initialize() {        
+    bool initialize(const std::string& robot_driver_description_path) {        
+        RCLCPP_INFO(this->get_logger(), "Initializing driver node...");
         // Initialize message vectors first
         _cached_joint_state_msg.name.resize(DOF);
         _cached_joint_state_msg.position.resize(DOF);
@@ -91,9 +91,9 @@ public:
         }
 
         // Check if file exists first
-        std::ifstream file(_robot_description_path);
+        std::ifstream file(robot_driver_description_path);
         if (!file.good()) {
-            RCLCPP_ERROR(get_logger(), "Robot description file not found: %s", _robot_description_path.c_str());
+            RCLCPP_ERROR(get_logger(), "Robot description file not found: %s", robot_driver_description_path.c_str());
             return false;
         }
         file.close();
@@ -101,9 +101,9 @@ public:
         try {
             if (!_driver) {
                 RCLCPP_INFO(get_logger(), "Attempting to create driver instance...");
-                RCLCPP_INFO(get_logger(), "Using robot description: %s", _robot_description_path.c_str());
+                RCLCPP_INFO(get_logger(), "Using robot description: %s", robot_driver_description_path.c_str());
                 
-                _driver = std::make_unique<driver::SerialManipulatorDriver>(_robot_description_path);
+                _driver = std::make_unique<timr::driver::SerialManipulatorDriver>(robot_driver_description_path);
                 
                 if (!_driver) {
                     RCLCPP_ERROR(get_logger(), "Failed to create driver instance");
@@ -125,7 +125,7 @@ public:
             // Create subscriber for target joint states
             _sub_target_joint_state = create_subscription<sensor_msgs::msg::JointState>(
                 "/target_joint_states", 10,
-                std::bind(&DriverNode::_callback_target_joint_state, this, std::placeholders::_1));
+                std::bind(&DriverNode::_callback_target_joint_states, this, std::placeholders::_1));
 
             // Create timer for publishing current joint states
             _timer = create_wall_timer(
@@ -141,16 +141,33 @@ public:
 
 };
 
-int main(int argc, char** argv)
+int run_driver_node(int argc, char** argv)
 {
     signal(SIGINT, signal_handler);
     
     rclcpp::init(argc, argv);
-    std::string robot_description_path = "/home/kai/Projects/timr/ros2_ws/src/driver/config/robot.json";
-    auto node = std::make_shared<DriverNode>(robot_description_path);
 
-    if (!node->initialize()) {
-        RCLCPP_INFO(node->get_logger(), "Failed to initialize driver node.");
+    auto node = std::make_shared<DriverNode>();
+
+    // Load parameters from yaml file
+    std::string param_file = "/home/kai/timr/ros2_ws/src/driver/config/driver-node.yaml";
+    if (!std::filesystem::exists(param_file)) {
+        RCLCPP_ERROR(rclcpp::get_logger("driver_node"), "Parameter file not found: %s", param_file.c_str());
+        rclcpp::shutdown();
+        return 1;
+    }
+
+    YAML::Node params = YAML::LoadFile(param_file);
+    std::string robot_driver_description_path = params["robotDriverDescriptionPath"].as<std::string>();
+
+    if (robot_driver_description_path.empty()) {
+        RCLCPP_ERROR(rclcpp::get_logger("driver_node"), "robotDriverDescriptionPath not found in parameter file");
+        rclcpp::shutdown();
+        return 1;
+    }
+
+    if (!node->initialize(robot_driver_description_path)) {
+        RCLCPP_ERROR(node->get_logger(), "Failed to initialize driver node.");
         rclcpp::shutdown();
         return 1;
     }
@@ -162,4 +179,13 @@ int main(int argc, char** argv)
     RCLCPP_INFO(node->get_logger(), "Shutting down driver node...");
     rclcpp::shutdown();
     return 0;
+}
+
+} // namespace driver
+
+} // namespace timr
+
+int main(int argc, char** argv)
+{
+    return timr::driver::run_driver_node(argc, argv);
 }

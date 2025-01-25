@@ -8,50 +8,50 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
-find_package(Boost COMPONENTS system REQUIRED)
 find_package(yaml-cpp REQUIRED)
-if (NOT Boost_FOUND)
-    message(FATAL_ERROR "Boost not found. Install Boost and ensure the system component is available.")
-endif()
+find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_gtest REQUIRED)
 
-
-add_executable(driver_node src/driver-node.cpp)
+add_executable(driver_node src/driver_node.cpp)
 target_include_directories(driver_node PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
-  ${CMAKE_CURRENT_SOURCE_DIR}/external/coppeliasim/include
-  ${CMAKE_CURRENT_SOURCE_DIR}/external/json/include
+)
+target_link_libraries(driver_node
+  yaml-cpp::yaml-cpp
 )
 
 ament_target_dependencies(driver_node
   rclcpp
+  std_msgs
   sensor_msgs
+  yaml-cpp
 )
 
-target_link_libraries(driver_node 
-    ${CMAKE_CURRENT_SOURCE_DIR}/external/coppeliasim/share/libremoteApiCoppeliasim.so
-    Boost::system
-)
-
-add_executable(my_test src/test.cpp)
-target_include_directories(my_test PUBLIC
+ament_add_gtest(helper test/helper.cpp)
+target_include_directories(helper PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
-  ${CMAKE_CURRENT_SOURCE_DIR}/external/coppeliasim/include
-  ${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/include
+)
+ament_target_dependencies(helper
+  rclcpp
 )
 
-ament_target_dependencies(my_test
+
+ament_add_gtest(joint_driver test/joint_driver.cpp)
+target_include_directories(joint_driver PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+ament_target_dependencies(joint_driver
   rclcpp
 ) 
 
-target_link_libraries(my_test
-  Boost::system
+target_link_libraries(joint_driver
   yaml-cpp::yaml-cpp
 )
 
-install(TARGETS
-  driver_node
-  my_test
+
+install(TARGETS driver_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -12,8 +12,6 @@ find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../external/qpOASES ${CMAKE_CURRENT_BINARY_DIR}/qpOASES)
-
 add_executable(kinematics_node src/kinematics-node.cpp)
 target_include_directories(kinematics_node PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
