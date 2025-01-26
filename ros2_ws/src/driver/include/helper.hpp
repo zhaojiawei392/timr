@@ -5,6 +5,8 @@
 #include <string>
 #include <stdexcept>
 #include <cstdint>
+#include <array>
+#include <iostream>
 // Linux System Headers
 #include <net/if.h>
 #include <sys/ioctl.h>
@@ -21,7 +23,6 @@ using dof_size_t = uint8_t;
 using scalar_t = double;
 constexpr dof_size_t DOF = 6;
 constexpr bool DEBUG = true;
-constexpr size_t MAX_FRAMES = 2;
 
 constexpr uint8_t crc8_table[256] = {
 0x00, 0x5E, 0xBC, 0xE2, 0x61, 0x3F, 0xDD, 0x83, 0xC2, 0x9C, 0x7E, 0x20, 0xA3, 0xFD, 0x1F, 0x41,
@@ -48,6 +49,28 @@ inline uint8_t crc8_checksum(const uint8_t* data, size_t size) {
         crc8 = crc8_table[crc8 ^ data[i]];
     }
     return crc8;
+}
+
+template<std::size_t size>
+inline void print_serial_data(const std::array<uint8_t, size>& data) {
+    for (size_t i = 0; i < data.size(); i++) {
+        std::cout << std::hex << (int)data[i] << " ";
+    }
+    std::cout << "\n";
+}
+
+template<std::size_t size>
+inline void print_can_frames(const std::array<can_frame, size>& frames) {
+    for (size_t i = 0; i < frames.size(); i++) {
+        std::cout << "Frame " << i + 1 << "/" << frames.size() << "\n";
+        std::cout << "ID: 0x" << std::hex << (frames[i].can_id & ~CAN_EFF_FLAG) << "\n";
+        std::cout << "Length: " << std::dec << (int)frames[i].can_dlc << "\n";
+        std::cout << "data: ";
+        for (size_t j = 0; j < frames[i].can_dlc; j++) {
+            std::cout << std::hex << (int)frames[i].data[j] << " ";
+        }
+        std::cout << "\n";
+    }
 }
 
 template<std::size_t serialSize>
@@ -81,9 +104,9 @@ inline std::array<can_frame, (serialSize + 4) / 7> serial_data_to_can_frames(std
     return frames;
 }
 
-template<std::size_t frameSize>
-inline std::array<uint8_t, frameSize * 7 + 2> can_frames_to_serial_data(const std::array<can_frame, frameSize>& frames) {
-    std::array<uint8_t, frameSize * 7 + 2> data;
+template<std::size_t expectedSerialDataSize, std::size_t frameCount>
+inline std::array<uint8_t, expectedSerialDataSize> can_frames_to_serial_data(const std::array<can_frame, frameCount>& frames) {
+    std::array<uint8_t, expectedSerialDataSize> data;
     
     // First byte is the ID from the CAN frame
     data[0] = (frames[0].can_id >> 8) & 0xFF;
@@ -91,7 +114,7 @@ inline std::array<uint8_t, frameSize * 7 + 2> can_frames_to_serial_data(const st
     data[1] = frames[0].data[0];
     
     // Copy remaining data from each frame
-    for (size_t frame_idx = 0; frame_idx < frameSize; frame_idx++) {
+    for (size_t frame_idx = 0; frame_idx < frameCount; frame_idx++) {
         size_t data_offset = 2 + (frame_idx * 7);  // 2 for ID and common byte, then 7 bytes per frame
         size_t bytes_to_copy = frames[frame_idx].can_dlc - 1;  // -1 because we skip the common first byte
         memcpy(data.data() + data_offset, frames[frame_idx].data + 1, bytes_to_copy);

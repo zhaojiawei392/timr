@@ -34,18 +34,19 @@ public:
     ~JointDriver()=default;
 
     explicit JointDriver(int can_socket, const std::string& yaml_path)
-    : _can_socket(can_socket), _config(config_from_yaml(yaml_path)) {
-        // configure_driver(_config);
+    : _can_socket(can_socket) {
+        _config = config_from_yaml(yaml_path);
+        send_config_to_driver(_config);
     }
 
     explicit JointDriver(int can_socket, Config config)
     : _can_socket(can_socket), _config(config) {
-        // configure_driver(_config);
+        send_config_to_driver(_config);
     }
 
     enum class MotorStepAngle : uint8_t {
-        MOTOR_0_9_DEG = 0x00,  // 0.9° motor
-        MOTOR_1_8_DEG = 0x01   // 1.8° motor
+        MOTOR_0_9_DEG = 0x32,  // 0.9° motor
+        MOTOR_1_8_DEG = 0x19   // 1.8° motor
     };
 
     enum class PulseMode : uint8_t {
@@ -288,59 +289,61 @@ public:
         return config;
     }
 
-    inline void configure_driver(const Config& config, bool store_flag=true) {
-        std::array<uint8_t, 33> code;
-        
-        // Header
-        code[0] = config.addr;                          // Address
-        code[1] = 0x48;                                  // Command code
-        code[2] = 0xD1;                                  // Subcommand
-        code[3] = static_cast<uint8_t>(store_flag);      // Store flag
-        
-        // Basic motor configuration
-        code[4] = static_cast<uint8_t>(config.motor_step_angle);
-        code[5] = static_cast<uint8_t>(config.pulse_mode);
-        code[6] = static_cast<uint8_t>(config.comm_mode);
-        code[7] = static_cast<uint8_t>(config.en_pin_mode);
-        code[8] = static_cast<uint8_t>(config.dir_pin_mode);
-        code[9] = config.microstep;
-        
-        // Feature settings
-        code[10] = static_cast<uint8_t>(config.interpolation);
-        code[11] = static_cast<uint8_t>(config.auto_screen_off);
-        
-        // Current and voltage limits (16-bit)
-        code[12] = static_cast<uint8_t>(config.open_loop_current_ma & 0xFF);
-        code[13] = static_cast<uint8_t>(config.open_loop_current_ma >> 8);
-        code[14] = static_cast<uint8_t>(config.closed_loop_stall_current_ma & 0xFF);
-        code[15] = static_cast<uint8_t>(config.closed_loop_stall_current_ma >> 8);
-        code[16] = static_cast<uint8_t>(config.closed_loop_max_voltage_mv & 0xFF);
-        code[17] = static_cast<uint8_t>(config.closed_loop_max_voltage_mv >> 8);
-        
-        // Communication settings
-        code[18] = static_cast<uint8_t>(config.uart_baudrate);
-        code[19] = static_cast<uint8_t>(config.can_baudrate);
-        code[20] = 0x01;                                 // Fixed ID value
-        code[21] = static_cast<uint8_t>(config.checksum_type);
-        code[22] = static_cast<uint8_t>(config.response_type);
-        
-        // Protection settings
-        code[23] = static_cast<uint8_t>(config.stall_protection);
-        code[24] = static_cast<uint8_t>(config.stall_threshold_rpm & 0xFF);
-        code[25] = static_cast<uint8_t>(config.stall_threshold_rpm >> 8);
-        code[26] = static_cast<uint8_t>(config.stall_current_threshold_ma & 0xFF);
-        code[27] = static_cast<uint8_t>(config.stall_current_threshold_ma >> 8);
-        code[28] = static_cast<uint8_t>(config.stall_detection_ms & 0xFF);
-        code[29] = static_cast<uint8_t>(config.stall_detection_ms >> 8);
-        
-        // Position control
-        uint16_t tolerance = static_cast<uint16_t>(config.position_tolerance_deg * 10);
-        code[30] = static_cast<uint8_t>(tolerance & 0xFF);
-        code[31] = static_cast<uint8_t>(tolerance >> 8);
-        
-        code[32] = 0x00;                                 // Checksum placeholder
+    inline Config get_config() {
+        return _config;
+    }
 
-        _can_transaction(code);
+    inline void send_config_to_driver(const Config& config, bool store_flag=true) {
+        std::array<uint8_t, 33> code = {
+            config.addr,                                  // Address
+            0x48,                                        // Command code
+            0xD1,                                        // Subcommand
+            static_cast<uint8_t>(store_flag),            // Store flag
+            
+            // Basic motor configuration
+            static_cast<uint8_t>(config.motor_step_angle),
+            static_cast<uint8_t>(config.pulse_mode),
+            static_cast<uint8_t>(config.comm_mode),
+            static_cast<uint8_t>(config.en_pin_mode),
+            static_cast<uint8_t>(config.dir_pin_mode),
+            config.microstep,
+            
+            // Feature settings
+            static_cast<uint8_t>(config.interpolation),
+            static_cast<uint8_t>(config.auto_screen_off),
+            
+            // Current and voltage limits (16-bit, little endian)
+            static_cast<uint8_t>(config.open_loop_current_ma >> 8),
+            static_cast<uint8_t>(config.open_loop_current_ma & 0xFF),
+            static_cast<uint8_t>(config.closed_loop_stall_current_ma >> 8),
+            static_cast<uint8_t>(config.closed_loop_stall_current_ma & 0xFF),
+            static_cast<uint8_t>(config.closed_loop_max_voltage_mv >> 8),
+            static_cast<uint8_t>(config.closed_loop_max_voltage_mv & 0xFF),
+            
+            // Communication settings
+            static_cast<uint8_t>(config.uart_baudrate),
+            static_cast<uint8_t>(config.can_baudrate),
+            0x01,                                        // Fixed ID value
+            static_cast<uint8_t>(config.checksum_type),
+            static_cast<uint8_t>(config.response_type),
+            
+            // Protection settings
+            static_cast<uint8_t>(config.stall_protection),
+            static_cast<uint8_t>(config.stall_threshold_rpm >> 8),
+            static_cast<uint8_t>(config.stall_threshold_rpm & 0xFF),
+            static_cast<uint8_t>(config.stall_current_threshold_ma >> 8),
+            static_cast<uint8_t>(config.stall_current_threshold_ma & 0xFF),
+            static_cast<uint8_t>(config.stall_detection_ms >> 8),
+            static_cast<uint8_t>(config.stall_detection_ms & 0xFF),
+            
+            // Position control (little endian)
+            static_cast<uint8_t>(static_cast<uint16_t>(config.position_tolerance_deg * 10) >> 8),
+            static_cast<uint8_t>(static_cast<uint16_t>(config.position_tolerance_deg * 10) & 0xFF),
+            
+            0x00                                         // Checksum placeholder
+        };
+
+        _command_transaction(code);
     }
 
     inline void set_open_loop_current(uint16_t current_ma, bool store_flag=true) {
@@ -350,12 +353,12 @@ public:
             0x44,                          // Command code
             0x33,                          // Subcommand
             static_cast<uint8_t>(store_flag),// Store flag (1=store, 0=don't store)
-            static_cast<uint8_t>(current_ma & 0xFF), // Current low byte
             static_cast<uint8_t>(current_ma >> 8),   // Current high byte
+            static_cast<uint8_t>(current_ma & 0xFF), // Current low byte
             0x00                           // Checksum placeholder (will be calculated by _crc8_checksum)
         };
 
-        _can_transaction(code);
+        _command_transaction(code);
     }
 
     inline void set_control_mode(bool open_loop, bool store_flag=true) {
@@ -369,7 +372,7 @@ public:
             0x00                           // Checksum placeholder (will be calculated by _crc8_checksum)
         };
 
-        _can_transaction(code);
+        _command_transaction(code);
     }
 
     inline void set_motor_address(uint8_t new_addr, bool store_flag=true) {
@@ -383,7 +386,7 @@ public:
             0x00                           // Checksum placeholder (will be calculated by _crc8_checksum)
         };
 
-        _can_transaction(code);
+        _command_transaction(code);
         _config.addr = new_addr;
     }
 
@@ -398,7 +401,7 @@ public:
             0x00                           // Checksum placeholder (will be calculated by _crc8_checksum)
         };
 
-        _can_transaction(code);
+        _command_transaction(code);
         _config.microstep = microstep;
     }
 
@@ -422,8 +425,8 @@ public:
         code.back() = crc8_checksum(code.data(), code.size() - 1);
         auto frames = serial_data_to_can_frames(code);
         _send_can_frames(frames);
-        auto frames_response = _read_can_frames();
-        auto response = can_frames_to_serial_data(frames_response);
+        auto frames_response = _read_can_frames<1>();
+        auto response = can_frames_to_serial_data<4>(frames_response);
 
         // Extract status byte
         uint8_t status = response[2];
@@ -448,15 +451,15 @@ public:
         code.back() = crc8_checksum(code.data(), code.size() - 1);
         auto frames = serial_data_to_can_frames(code);
         _send_can_frames(frames);
-        auto frames_response = _read_can_frames();
-        auto response = can_frames_to_serial_data(frames_response);
+        auto frames_response = _read_can_frames<1>();
+        auto response = can_frames_to_serial_data<4>(frames_response);
 
         // Extract sign and velocity from response
         bool is_negative = (response[2] == 0x01);
         
-        // Combine 2 bytes into velocity value (RPM)
-        uint16_t rpm = (static_cast<uint16_t>(response[3]) << 8) |
-                      static_cast<uint16_t>(response[4]);
+        // Combine 2 bytes into velocity value (RPM) - little endian
+        uint16_t rpm = static_cast<uint16_t>(response[3]) |
+                      (static_cast<uint16_t>(response[4]) << 8);
 
         // Convert RPM to rad/s
         scalar_t velocity = static_cast<scalar_t>(rpm) * 2.0 * M_PI / 60.0;
@@ -475,17 +478,17 @@ public:
         code.back() = crc8_checksum(code.data(), code.size() - 1);
         auto frames = serial_data_to_can_frames(code);
         _send_can_frames(frames);
-        auto frames_response = _read_can_frames();
-        auto response = can_frames_to_serial_data(frames_response);
+        auto frames_response = _read_can_frames<1>();
+        auto response = can_frames_to_serial_data<4>(frames_response);
 
         // Extract sign and position from response
         bool is_negative = (response[2] == 0x01);
         
-        // Combine 4 bytes into position value
-        uint32_t position = (static_cast<uint32_t>(response[3]) << 24) |
+        // Combine 4 bytes into position value (little endian)
+        uint32_t position = static_cast<uint32_t>(response[6]) |
+                           (static_cast<uint32_t>(response[5]) << 8) |
                            (static_cast<uint32_t>(response[4]) << 16) |
-                           (static_cast<uint32_t>(response[5]) << 8)  |
-                           static_cast<uint32_t>(response[6]);
+                           (static_cast<uint32_t>(response[3]) << 24);
 
         // Convert to radians (2π per rotation)
         scalar_t angle = static_cast<scalar_t>(position) * 2.0 * M_PI / 65536.0;
@@ -504,17 +507,17 @@ public:
         code.back() = crc8_checksum(code.data(), code.size() - 1);
         auto frames = serial_data_to_can_frames(code);
         _send_can_frames(frames);
-        auto frames_response = _read_can_frames();
-        auto response = can_frames_to_serial_data(frames_response);
+        auto frames_response = _read_can_frames<1>();
+        auto response = can_frames_to_serial_data<4>(frames_response);
 
         // Extract sign and error from response
         bool is_negative = (response[2] == 0x01);
         
-        // Combine 4 bytes into error value
-        uint32_t error = (static_cast<uint32_t>(response[3]) << 24) |
+        // Combine 4 bytes into error value (little endian)
+        uint32_t error = static_cast<uint32_t>(response[6]) |
+                        (static_cast<uint32_t>(response[5]) << 8) |
                         (static_cast<uint32_t>(response[4]) << 16) |
-                        (static_cast<uint32_t>(response[5]) << 8)  |
-                        static_cast<uint32_t>(response[6]);
+                        (static_cast<uint32_t>(response[3]) << 24);
 
         // Convert to radians (2π per rotation)
         scalar_t angle_error = static_cast<scalar_t>(error) * 2.0 * M_PI / 65536.0;
@@ -533,17 +536,17 @@ public:
         code.back() = crc8_checksum(code.data(), code.size() - 1);
         auto frames = serial_data_to_can_frames(code);
         _send_can_frames(frames);
-        auto frames_response = _read_can_frames();
-        auto response = can_frames_to_serial_data(frames_response);
+        auto frames_response = _read_can_frames<1>();
+        auto response = can_frames_to_serial_data<4>(frames_response);
 
         // Extract sign and position from response
         bool is_negative = (response[2] == 0x01);
         
-        // Combine 4 bytes into position value
-        uint32_t position = (static_cast<uint32_t>(response[3]) << 24) |
+        // Combine 4 bytes into position value (little endian)
+        uint32_t position = static_cast<uint32_t>(response[6]) |
+                           (static_cast<uint32_t>(response[5]) << 8) |
                            (static_cast<uint32_t>(response[4]) << 16) |
-                           (static_cast<uint32_t>(response[5]) << 8)  |
-                           static_cast<uint32_t>(response[6]);
+                           (static_cast<uint32_t>(response[3]) << 24);
 
         // Convert to radians (2π per rotation)
         scalar_t angle = static_cast<scalar_t>(position) * 2.0 * M_PI / 65536.0;
@@ -562,17 +565,17 @@ public:
         code.back() = crc8_checksum(code.data(), code.size() - 1);
         auto frames = serial_data_to_can_frames(code);
         _send_can_frames(frames);
-        auto frames_response = _read_can_frames();
-        auto response = can_frames_to_serial_data(frames_response);
+        auto frames_response = _read_can_frames<1>();
+        auto response = can_frames_to_serial_data<4>(frames_response);
 
         // Extract sign and position from response
         bool is_negative = (response[2] == 0x01);
         
-        // Combine 4 bytes into position value
-        uint32_t position = (static_cast<uint32_t>(response[3]) << 24) |
-                           (static_cast<uint32_t>(response[4]) << 16) |
-                           (static_cast<uint32_t>(response[5]) << 8)  |
-                           static_cast<uint32_t>(response[6]);
+        // Combine 4 bytes into position value (little endian)
+        uint32_t position = static_cast<uint32_t>(response[3]) |
+                           (static_cast<uint32_t>(response[4]) << 8) |
+                           (static_cast<uint32_t>(response[5]) << 16) |
+                           (static_cast<uint32_t>(response[6]) << 24);
 
         // Convert to radians (2π per rotation)
         scalar_t angle = static_cast<scalar_t>(position) * 2.0 * M_PI / 65536.0;
@@ -589,7 +592,7 @@ public:
             0x00           // Checksum placeholder (will be calculated by _crc8_checksum)
         };
 
-        _can_transaction(code);
+        _command_transaction(code);
     }
 
     inline void calibration() {
@@ -601,7 +604,7 @@ public:
             0x00           // Checksum placeholder (will be calculated by _crc8_checksum)
         };
 
-        _can_transaction(code);
+        _command_transaction(code);
     }
 
     inline void clear_position() {
@@ -613,7 +616,7 @@ public:
             0x00           // Checksum placeholder (will be calculated by _crc8_checksum)
         };
 
-        _can_transaction(code);
+        _command_transaction(code);
     }
 
     inline void interrupt_homing() {
@@ -625,7 +628,7 @@ public:
             0x00           // Checksum placeholder (will be calculated by _crc8_checksum)
         };
 
-        _can_transaction(code);
+        _command_transaction(code);
     }
 
     enum class HomingMode : uint8_t {
@@ -645,7 +648,7 @@ public:
             0x00                           // Checksum placeholder (will be calculated by _crc8_checksum)
         };
 
-        _can_transaction(code);
+        _command_transaction(code);
     }
 
     inline void set_zero_position(bool store_flag=true) {
@@ -658,7 +661,7 @@ public:
             0x00                           // Checksum placeholder (will be calculated by _crc8_checksum)
         };
 
-        _can_transaction(code);
+        _command_transaction(code);
     }
 
     inline void sync_move() {
@@ -670,7 +673,7 @@ public:
             0x00           // Checksum placeholder (will be calculated by _crc8_checksum)
         };
 
-        _can_transaction(code);
+        _command_transaction(code);
     }
     
     inline void emergency_stop(bool sync_flag=false) {
@@ -683,7 +686,7 @@ public:
             0x00                           // Checksum placeholder (will be calculated by _crc8_checksum)
         };
 
-        _can_transaction(code);
+        _command_transaction(code);
     }
 
     inline void enable(bool enable, bool sync_flag=false) {
@@ -697,7 +700,7 @@ public:
             0x00
         };
 
-        _can_transaction(code);
+        _command_transaction(code);
     }
     
     inline void vel_control(scalar_t vel, scalar_t acc, bool sync_flag=false) {
@@ -708,19 +711,19 @@ public:
         // Convert acceleration to control level (0-255), ensuring full range utilization
         const scalar_t normalized_acc = std::min(std::abs(acc), 1.0); 
         const uint8_t acc_hex = static_cast<uint8_t>(normalized_acc * 255);
-        // Command format: [addr][0xF6][direction][speed_l][speed_h][acc][sync][checksum]
+        // Command format: [addr][0xF6][direction][speed_h][speed_l][acc][sync][checksum]
         std::array<uint8_t, 8> code = {
             _config.addr,                          // Address
             0xF6,                          // Command code
             static_cast<uint8_t>(_config.dir_pin_mode),// Direction (0=CW, 1=CCW)
-            static_cast<uint8_t>(rpm_hex & 0xFF),// Speed low byte
             static_cast<uint8_t>(rpm_hex >> 8),  // Speed high byte
+            static_cast<uint8_t>(rpm_hex & 0xFF),// Speed low byte
             acc_hex,                       // Acceleration
             static_cast<uint8_t>(sync_flag),// Sync flag
             0x00                           // Checksum placeholder
         };
 
-        _can_transaction(code);
+        _command_transaction(code);
     }
 
     inline void pos_control(scalar_t pos, scalar_t vel, scalar_t acc, bool sync_flag=false) {
@@ -744,19 +747,19 @@ public:
             _config.addr,                              // Address
             0xFD,                              // Command code
             static_cast<uint8_t>(_config.dir_pin_mode),    // Direction (0=CW, 1=CCW)
-            static_cast<uint8_t>(rpm_hex & 0xFF),// Speed low byte
-            static_cast<uint8_t>(rpm_hex >> 8), // Speed high byte
+            static_cast<uint8_t>(rpm_hex >> 8),     // Speed high byte
+            static_cast<uint8_t>(rpm_hex & 0xFF),    // Speed low byte
             acc_hex,                           // Acceleration
-            static_cast<uint8_t>(pulse_count & 0xFF),   // Pulse count byte 0 (LSB)
-            static_cast<uint8_t>(pulse_count >> 8),     // Pulse count byte 1
-            static_cast<uint8_t>(pulse_count >> 16),    // Pulse count byte 2
-            static_cast<uint8_t>(pulse_count >> 24),    // Pulse count byte 3 (MSB)
+            static_cast<uint8_t>((pulse_count >> 24) & 0xFF), // Pulse count byte 3 (MSB)
+            static_cast<uint8_t>((pulse_count >> 16) & 0xFF), // Pulse count byte 2
+            static_cast<uint8_t>((pulse_count >> 8) & 0xFF),  // Pulse count byte 1
+            static_cast<uint8_t>(pulse_count & 0xFF),       // Pulse count byte 0 (LSB)
             0x01,                              // Mode (0=relative, 1=absolute)
             static_cast<uint8_t>(sync_flag),   // Sync flag
             0x00                               // Checksum placeholder
         };
 
-        _can_transaction(code);
+        _command_transaction(code);
     }
 
 protected:
@@ -765,36 +768,29 @@ protected:
 
     template<std::size_t frameSize>
     inline void _send_can_frames(std::array<can_frame, frameSize>& frames) {
+        if (DEBUG) {
+            std::cout << "----------------SENDING FRAMES----------------\n";
+            print_can_frames(frames);
+        }
         // Send frames
         for (size_t i = 0; i < frames.size(); i++) {
             ssize_t nbytes = write(_can_socket, &frames[i], CAN_MTU);
-            if (DEBUG) {
-                std::cout << "Send Frame " << i + 1 << "/" << frames.size() << std::endl;
-                std::cout << "Frame ID: 0x" << std::hex << (frames[i].can_id & ~CAN_EFF_FLAG) << std::endl;
-                std::cout << "Frame Length: " << std::dec << (int)frames[i].can_dlc << std::endl;
-                std::cout << "Frame data: ";
-                for (int j = 0; j < frames[i].can_dlc; j++) {
-                    std::cout << std::hex << (int)frames[i].data[j] << " ";
-                }
-                std::cout << std::endl;
-            }
             if (nbytes != CAN_MTU) {
                 throw std::runtime_error("Failed to write CAN frame: " + std::string(strerror(errno)));
             }
         }
     }
 
-    inline std::array<can_frame, MAX_FRAMES> _read_can_frames() {
+    template<std::size_t frameSize>
+    inline std::array<can_frame, frameSize> _read_can_frames() {
         struct can_frame frame;
         struct timeval timeout = {1, 0};  // 1 second timeout
-        std::array<can_frame, MAX_FRAMES> frames;
-        size_t frame_count = 0;
-        
+        std::array<can_frame, frameSize> frames;
         if (setsockopt(_can_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
             throw std::runtime_error("setsockopt failed: " + std::string(strerror(errno)));
         }   
-
-        while (frame_count < MAX_FRAMES) {
+        size_t frame_count = 0;
+        while (frame_count < frameSize) {
             ssize_t nbytes = ::read(_can_socket, &frame, sizeof(frame));
             if (nbytes == -1) {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -803,16 +799,6 @@ protected:
                 }
                 throw std::runtime_error("read failed: " + std::string(strerror(errno)));
             }
-            if (DEBUG) {
-                std::cout << "Read Frame " << frame_count + 1 << "/" << frames.size() << std::endl;
-                std::cout << "Frame ID: 0x" << std::hex << (frames[frame_count].can_id & ~CAN_EFF_FLAG) << std::endl;
-                std::cout << "Frame Length: " << std::dec << (int)frames[frame_count].can_dlc << std::endl;
-                std::cout << "Frame data: ";
-                for (int j = 0; j < frames[frame_count].can_dlc; j++) {
-                    std::cout << std::hex << (int)frames[frame_count].data[j] << " ";
-                }
-                std::cout << std::endl;
-            }
             frames[frame_count++] = frame;
         }
 
@@ -820,30 +806,65 @@ protected:
             throw std::runtime_error("No frames received");
         }
 
+        if (DEBUG) {
+            std::cout << "----------------READING FRAMES----------------\n";
+            print_can_frames(frames);
+        }
+
         return frames;
     }
 
+    inline uint8_t _checksum(const uint8_t* data, size_t size) {
+        if (_config.checksum_type == ChecksumType::FIXED_6B) {
+            return 0x6B;
+        } else if (_config.checksum_type == ChecksumType::CRC8) {
+            return crc8_checksum(data, size);
+        } else if (_config.checksum_type == ChecksumType::XOR) {
+            uint8_t checksum = 0;
+            for (size_t i = 0; i < size; i++) {
+                checksum ^= data[i];
+            }
+            return checksum;
+        } else {
+            throw std::runtime_error("Unknown checksum type");
+        }
+    }
+
     template<std::size_t size>
-    inline void _can_transaction(std::array<uint8_t, size>& code) {
-        code.back() = crc8_checksum(code.data(), size - 1);
-        auto frames = serial_data_to_can_frames(code);
-        _send_can_frames(frames);
-        auto frame_response = _read_can_frames();
-        auto response = can_frames_to_serial_data(frame_response);
+    inline void _command_transaction(std::array<uint8_t, size>& code) {
+        code.back() = _checksum(code.data(), size - 1);
+        auto send_frames = serial_data_to_can_frames(code);
+        _send_can_frames(send_frames);
+        auto read_frames = _read_can_frames<1>();
+        // command response is expected to be 4 bytes long [addr][common_byte][response_type][checksum]
+        auto read_serial_data = can_frames_to_serial_data<4>(read_frames);
+        if (read_serial_data.back() != crc8_checksum(read_serial_data.data(), read_serial_data.size() - 1)) {
+            if (DEBUG) {
+                std::cout << "Checksum error: ";
+                for (const auto& byte : read_serial_data) {
+                    std::cout << std::hex << (int)byte << " ";
+                }
+                std::cout << "\n";
+            }
+            throw std::runtime_error("Checksum error");
+        }
 
         // Check response type and handle accordingly
-        if (response[0] == code[0] && response[1] == code[1] && response[2] == 0x02) {
+        if (read_serial_data[0] == code[0] && read_serial_data[1] == code[1] && read_serial_data[2] == 0x02) {
+            if (DEBUG) {
+                std::cout << "Command successful\n";
+            }
             return;
         }
 
         // Helper function to print frame details
-        auto print_frame_details = [&response, &code]() {
+        auto print_frame_details = [&read_serial_data, &code]() {
             std::cout << "Command sent: ";
             for (const auto& byte : code) {
                 std::cout << std::hex << (int)byte << " ";
             }
             std::cout << "Command response: ";
-            for (const auto& byte : response) {
+            for (const auto& byte : read_serial_data) {
                 std::cout << std::hex << (int)byte << " ";
             }
         };
@@ -851,9 +872,9 @@ protected:
         // Handle error cases
         print_frame_details();
         
-        if (response[0] == code[0] && response[1] == code[1] && response[2] == 0xE2) {
+        if (read_serial_data[0] == code[0] && read_serial_data[1] == code[1] && read_serial_data[2] == 0xE2) {
             throw std::runtime_error("Condition not met.");
-        } else if (response[0] == code[0] && response[1] == 0x00 && response[2] == 0xEE) {
+        } else if (read_serial_data[0] == code[0] && read_serial_data[1] == 0x00 && read_serial_data[2] == 0xEE) {
             throw std::runtime_error("Wrong command.");
         } else {
             throw std::runtime_error("Unknown error.");

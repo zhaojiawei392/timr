@@ -14,7 +14,7 @@ spec:
   enPinMode: hold
   interpolationEnabled: true
   autoScreenOff: false
-  openLoopCurrentMa: 1100
+  openLoopCurrentMa: 1000
   closedLoopStallCurrentMa: 3000
   closedLoopMaxVoltageMv: 4000
   uartBaudrate: 115200
