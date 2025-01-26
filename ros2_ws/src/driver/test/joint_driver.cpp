@@ -6,18 +6,13 @@ namespace timr {
 
 namespace driver {
 
-constexpr bool TEST_WITH_REAL_DRIVER = true;
 
 class JointDriverTest : public ::testing::Test {
 protected:
     int can_socket;
     timr::driver::JointDriver::Config joint1_driver_config;
     std::string joint1_description_path = "/home/kai/Projects/timr/ros2_ws/src/driver/config/joint1.yaml";
-    std::string joint2_description_path = "/home/kai/Projects/timr/ros2_ws/src/driver/config/joint2.yaml";
-    std::string joint3_description_path = "/home/kai/Projects/timr/ros2_ws/src/driver/config/joint3.yaml";
-    std::string joint4_description_path = "/home/kai/Projects/timr/ros2_ws/src/driver/config/joint4.yaml";
-    std::string joint5_description_path = "/home/kai/Projects/timr/ros2_ws/src/driver/config/joint5.yaml";
-    std::string joint6_description_path = "/home/kai/Projects/timr/ros2_ws/src/driver/config/joint6.yaml";
+    std::unique_ptr<timr::driver::JointDriver> joint_driver;
 
 public:
 
@@ -49,6 +44,7 @@ public:
 
         can_socket = bind_can_socket("can0");
         ASSERT_NE(can_socket, -1) << "Failed to create CAN socket";
+        joint_driver = std::make_unique<timr::driver::JointDriver>(can_socket, joint1_description_path);
     }    
 
     void TearDown() override {
@@ -87,16 +83,15 @@ TEST_F(JointDriverTest, TEST_CONFIG) {
 TEST_F(JointDriverTest, TEST_CONSTRUCTOR_FROM_CONFIG) {
     if (TEST_WITH_REAL_DRIVER) {
         auto config1 = JointDriver::config_from_yaml(joint1_description_path);
-        timr::driver::JointDriver joint_driver1(can_socket, config1);
+        timr::driver::JointDriver joint_driver(can_socket, config1);
         EXPECT_NO_THROW();
         sleep(2);
     }
 }
 
-
 TEST_F(JointDriverTest, TEST_CONSTRUCTOR_FROM_YAML) {
     if (TEST_WITH_REAL_DRIVER) {
-        timr::driver::JointDriver joint_driver1(can_socket, joint1_description_path);
+        timr::driver::JointDriver joint_driver(can_socket, joint1_description_path);
         EXPECT_NO_THROW();
         sleep(2);
     }
@@ -104,48 +99,87 @@ TEST_F(JointDriverTest, TEST_CONSTRUCTOR_FROM_YAML) {
 
 TEST_F(JointDriverTest, TEST_CONFIGURATION) {
     if (TEST_WITH_REAL_DRIVER) {
-        timr::driver::JointDriver joint_driver1(can_socket, joint1_description_path);
-        auto config = joint_driver1.get_config();
+        auto config = joint_driver->get_config();
 
-        EXPECT_NO_THROW(joint_driver1.send_config_to_driver(joint1_driver_config));
+        EXPECT_NO_THROW(joint_driver->send_config_to_driver(config));
         sleep(2);
     }
 }
 
 TEST_F(JointDriverTest, TEST_VEL_CONTROL) {
     if (TEST_WITH_REAL_DRIVER) {
-        timr::driver::JointDriver joint_driver1(can_socket, joint1_description_path);
-        EXPECT_NO_THROW(joint_driver1.vel_control(0.5, 0.1));
+        EXPECT_NO_THROW(joint_driver->velocity_control(0.5, 0.1));
         sleep(5);
     }
 }   
-
 
 TEST_F(JointDriverTest, TEST_EMERGENCY_STOP_VEL_CONTROL) {
     if (TEST_WITH_REAL_DRIVER) {
-        timr::driver::JointDriver joint_driver1(can_socket, joint1_description_path);
-        EXPECT_NO_THROW(joint_driver1.emergency_stop());
+        EXPECT_NO_THROW(joint_driver->emergency_stop());
         sleep(2);
     }
 }   
 
-
 TEST_F(JointDriverTest, TEST_POS_CONTROL) {
     if (TEST_WITH_REAL_DRIVER) {
-        timr::driver::JointDriver joint_driver1(can_socket, joint1_description_path);
-        EXPECT_NO_THROW(joint_driver1.pos_control(60, 0.5, 0.1));
+        EXPECT_NO_THROW(joint_driver->position_control(60, 0.5, 0.1));
         sleep(5);
     }
 }   
 
-
 TEST_F(JointDriverTest, TEST_EMERGENCY_STOP_POS_CONTROL) {
     if (TEST_WITH_REAL_DRIVER) {
-        timr::driver::JointDriver joint_driver1(can_socket, joint1_description_path);
-        EXPECT_NO_THROW(joint_driver1.emergency_stop());
+        EXPECT_NO_THROW(joint_driver->emergency_stop());
         sleep(2);
     }
 }   
+
+TEST_F(JointDriverTest, TEST_GET_REALTIME_POSITION_BEFORE_HOMING) {
+    if (TEST_WITH_REAL_DRIVER) {
+        auto pos = joint_driver->read_realtime_position();
+        std::cout << "Position: " << pos << std::endl;
+        sleep(2);
+    }
+}
+
+TEST_F(JointDriverTest, TEST_GET_REALTIME_VELOCITY_BEFORE_HOMING) {
+    if (TEST_WITH_REAL_DRIVER) {
+        auto vel = joint_driver->read_realtime_velocity();
+        std::cout << "Velocity: " << vel << std::endl;
+        sleep(2);
+    }
+}
+
+TEST_F(JointDriverTest, TEST_HOMMING) {
+    if (TEST_WITH_REAL_DRIVER) {
+        EXPECT_NO_THROW(joint_driver->homing());
+        sleep(2);
+    }
+}
+
+TEST_F(JointDriverTest, TEST_GET_REALTIME_POSITION_AFTER_HOMING) {
+    if (TEST_WITH_REAL_DRIVER) {
+        auto pos = joint_driver->read_realtime_position();
+        std::cout << "Position: " << pos << std::endl;
+        sleep(2);
+    }
+}
+
+
+TEST_F(JointDriverTest, TEST_GET_REALTIME_VELOCITY_AFTER_HOMING) {
+    if (TEST_WITH_REAL_DRIVER) {
+        auto vel = joint_driver->read_realtime_velocity();
+        std::cout << "Velocity: " << vel << std::endl;
+        sleep(2);
+    }
+}
+
+TEST_F(JointDriverTest, TEST_CLEAR_POSITION) {
+    if (TEST_WITH_REAL_DRIVER) {
+        EXPECT_NO_THROW(joint_driver->clear_position());
+        sleep(2);
+    }
+}
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

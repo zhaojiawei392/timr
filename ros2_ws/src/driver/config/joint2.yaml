@@ -2,13 +2,13 @@ apiVersion: serialmanipulatordriver.timr.io/v1alpha1
 metadata:
   name: motor1
   description: Motor driver configuration
-kind: MotorDriver
+kind: JointDriver
 spec:
   addr: 2
   motorStepAngle: 1.8
   microstep: 8
   reducerRatio: 27
-  positiveDirection: cw
+  positiveDirection: ccw
   pulseMode: foc
   communicationMode: can
   enPinMode: hold

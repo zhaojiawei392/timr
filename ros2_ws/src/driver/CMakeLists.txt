@@ -38,15 +38,28 @@ ament_target_dependencies(helper
 )
 
 
-ament_add_gtest(joint_driver test/joint_driver.cpp)
-target_include_directories(joint_driver PUBLIC
+# ament_add_gtest(joint_driver test/joint_driver.cpp)
+# target_include_directories(joint_driver PUBLIC
+#   ${CMAKE_CURRENT_SOURCE_DIR}/include
+# )
+# ament_target_dependencies(joint_driver
+#   rclcpp
+# ) 
+
+# target_link_libraries(joint_driver
+#   yaml-cpp::yaml-cpp
+# )
+
+
+ament_add_gtest(robot_driver test/robot_driver.cpp)
+target_include_directories(robot_driver PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
-ament_target_dependencies(joint_driver
+ament_target_dependencies(robot_driver
   rclcpp
 ) 
 
-target_link_libraries(joint_driver
+target_link_libraries(robot_driver
   yaml-cpp::yaml-cpp
 )
 

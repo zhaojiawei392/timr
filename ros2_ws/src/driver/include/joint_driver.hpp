@@ -6,7 +6,7 @@
 #include <string>
 #include <stdexcept>
 #include <iostream>
-
+#include <thread>
 // Third-party Libraries
 #include <yaml-cpp/yaml.h>
 
@@ -175,10 +175,22 @@ public:
         
         // Basic motor configuration
         config.addr = spec["addr"].as<uint8_t>();
-        config.motor_step_angle = spec["motorStepAngle"].as<double>() == 1.8 ? MotorStepAngle::MOTOR_1_8_DEG : MotorStepAngle::MOTOR_0_9_DEG;
+        if (spec["motorStepAngle"].as<double>() == 1.8) {
+            config.motor_step_angle = MotorStepAngle::MOTOR_1_8_DEG;
+        } else if (spec["motorStepAngle"].as<double>() == 0.9) {
+            config.motor_step_angle = MotorStepAngle::MOTOR_0_9_DEG;
+        } else {
+            throw std::runtime_error("Invalid motor step angle: " + spec["motorStepAngle"].as<std::string>() + ", valid options are: 0.9, 1.8");
+        }
         config.microstep = spec["microstep"].as<uint8_t>();
         config.reducer_ratio = spec["reducerRatio"].as<uint8_t>();
-        config.dir_pin_mode = spec["positiveDirection"].as<std::string>() == "ccw" ? DirPinMode::CCW : DirPinMode::CW;
+        if (spec["positiveDirection"].as<std::string>() == "ccw") {
+            config.dir_pin_mode = DirPinMode::CCW;
+        } else if (spec["positiveDirection"].as<std::string>() == "cw") {
+            config.dir_pin_mode = DirPinMode::CW;
+        } else {
+            throw std::runtime_error("Invalid positive direction: " + spec["positiveDirection"].as<std::string>() + ", valid options are: ccw, cw");
+        }
         std::string plus_mode = spec["pulseMode"].as<std::string>();
         if (plus_mode == "foc") {
             config.pulse_mode = PulseMode::PUL_FOC;
@@ -289,7 +301,7 @@ public:
         return config;
     }
 
-    inline Config get_config() {
+    inline Config get_config() const noexcept {
         return _config;
     }
 
@@ -305,7 +317,7 @@ public:
             static_cast<uint8_t>(config.pulse_mode),
             static_cast<uint8_t>(config.comm_mode),
             static_cast<uint8_t>(config.en_pin_mode),
-            static_cast<uint8_t>(config.dir_pin_mode),
+            static_cast<uint8_t>(DirPinMode::CCW),   // Fixed ccw basic direction
             config.microstep,
             
             // Feature settings
@@ -452,17 +464,18 @@ public:
         auto frames = serial_data_to_can_frames(code);
         _send_can_frames(frames);
         auto frames_response = _read_can_frames<1>();
-        auto response = can_frames_to_serial_data<4>(frames_response);
+        auto response = can_frames_to_serial_data<6>(frames_response);
 
         // Extract sign and velocity from response
-        bool is_negative = (response[2] == 0x01);
+        bool is_negative = (_config.dir_pin_mode == DirPinMode::CCW) ? 
+            (response[2] == 0x01) : (response[2] == 0x00);
         
         // Combine 2 bytes into velocity value (RPM) - little endian
         uint16_t rpm = static_cast<uint16_t>(response[3]) |
                       (static_cast<uint16_t>(response[4]) << 8);
 
         // Convert RPM to rad/s
-        scalar_t velocity = static_cast<scalar_t>(rpm) * 2.0 * M_PI / 60.0;
+        scalar_t velocity = static_cast<scalar_t>(rpm) * 2.0 * M_PI / 60.0 / _config.reducer_ratio;
         
         return is_negative ? -velocity : velocity;
     }
@@ -479,10 +492,11 @@ public:
         auto frames = serial_data_to_can_frames(code);
         _send_can_frames(frames);
         auto frames_response = _read_can_frames<1>();
-        auto response = can_frames_to_serial_data<4>(frames_response);
+        auto response = can_frames_to_serial_data<6>(frames_response);
 
         // Extract sign and position from response
-        bool is_negative = (response[2] == 0x01);
+        bool is_negative = (_config.dir_pin_mode == DirPinMode::CCW) ? 
+            (response[2] == 0x01) : (response[2] == 0x00);
         
         // Combine 4 bytes into position value (little endian)
         uint32_t position = static_cast<uint32_t>(response[6]) |
@@ -491,7 +505,7 @@ public:
                            (static_cast<uint32_t>(response[3]) << 24);
 
         // Convert to radians (2π per rotation)
-        scalar_t angle = static_cast<scalar_t>(position) * 2.0 * M_PI / 65536.0;
+        scalar_t angle = static_cast<scalar_t>(position) * 2.0 * M_PI / 65536.0 / _config.reducer_ratio;
         
         return is_negative ? -angle : angle;
     }
@@ -508,10 +522,11 @@ public:
         auto frames = serial_data_to_can_frames(code);
         _send_can_frames(frames);
         auto frames_response = _read_can_frames<1>();
-        auto response = can_frames_to_serial_data<4>(frames_response);
+        auto response = can_frames_to_serial_data<8>(frames_response);
 
         // Extract sign and error from response
-        bool is_negative = (response[2] == 0x01);
+        bool is_negative = (_config.dir_pin_mode == DirPinMode::CCW) ? 
+            (response[2] == 0x01) : (response[2] == 0x00);
         
         // Combine 4 bytes into error value (little endian)
         uint32_t error = static_cast<uint32_t>(response[6]) |
@@ -520,7 +535,7 @@ public:
                         (static_cast<uint32_t>(response[3]) << 24);
 
         // Convert to radians (2π per rotation)
-        scalar_t angle_error = static_cast<scalar_t>(error) * 2.0 * M_PI / 65536.0;
+        scalar_t angle_error = static_cast<scalar_t>(error) * 2.0 * M_PI / 65536.0 / _config.reducer_ratio;
         
         return is_negative ? -angle_error : angle_error;
     }
@@ -537,10 +552,11 @@ public:
         auto frames = serial_data_to_can_frames(code);
         _send_can_frames(frames);
         auto frames_response = _read_can_frames<1>();
-        auto response = can_frames_to_serial_data<4>(frames_response);
+        auto response = can_frames_to_serial_data<8>(frames_response);
 
         // Extract sign and position from response
-        bool is_negative = (response[2] == 0x01);
+        bool is_negative = (_config.dir_pin_mode == DirPinMode::CCW) ? 
+            (response[2] == 0x01) : (response[2] == 0x00);
         
         // Combine 4 bytes into position value (little endian)
         uint32_t position = static_cast<uint32_t>(response[6]) |
@@ -549,7 +565,7 @@ public:
                            (static_cast<uint32_t>(response[3]) << 24);
 
         // Convert to radians (2π per rotation)
-        scalar_t angle = static_cast<scalar_t>(position) * 2.0 * M_PI / 65536.0;
+        scalar_t angle = static_cast<scalar_t>(position) * 2.0 * M_PI / 65536.0 / _config.reducer_ratio;
         
         return is_negative ? -angle : angle;
     }
@@ -566,11 +582,11 @@ public:
         auto frames = serial_data_to_can_frames(code);
         _send_can_frames(frames);
         auto frames_response = _read_can_frames<1>();
-        auto response = can_frames_to_serial_data<4>(frames_response);
+        auto response = can_frames_to_serial_data<8>(frames_response);
 
-        // Extract sign and position from response
-        bool is_negative = (response[2] == 0x01);
-        
+        // Extract sign and position from response, reversing if direction is CW
+        bool is_negative = (_config.dir_pin_mode == DirPinMode::CCW) ? 
+            (response[2] == 0x01) : (response[2] == 0x00);
         // Combine 4 bytes into position value (little endian)
         uint32_t position = static_cast<uint32_t>(response[3]) |
                            (static_cast<uint32_t>(response[4]) << 8) |
@@ -578,7 +594,7 @@ public:
                            (static_cast<uint32_t>(response[6]) << 24);
 
         // Convert to radians (2π per rotation)
-        scalar_t angle = static_cast<scalar_t>(position) * 2.0 * M_PI / 65536.0;
+        scalar_t angle = static_cast<scalar_t>(position) * 2.0 * M_PI / 65536.0 / _config.reducer_ratio;
         
         return is_negative ? -angle : angle;
     }
@@ -638,7 +654,7 @@ public:
         MULTI_TURN_LIMIT_SWITCH = 0x03 // Multi-turn with limit switch
     };
 
-    inline void trigger_homing(HomingMode mode = HomingMode::SINGLE_TURN_NEAREST, bool sync_flag = false) {
+    inline void driver_homing(HomingMode mode = HomingMode::SINGLE_TURN_NEAREST, bool sync_flag = false) {
         // Command format: [addr][0x9A][mode][sync_flag][checksum]
         std::array<uint8_t, 5> code = {
             _config.addr,                          // Address
@@ -703,7 +719,7 @@ public:
         _command_transaction(code);
     }
     
-    inline void vel_control(scalar_t vel, scalar_t acc, bool sync_flag=false) {
+    inline void velocity_control(scalar_t vel, scalar_t acc, bool sync_flag=false) {
         // Convert velocity from rad/s to RPM, clamped to uint16 range
         const scalar_t rpm = std::abs(vel) * 60.0 / (2.0 * M_PI) * _config.reducer_ratio;
         const uint16_t rpm_hex = static_cast<uint16_t>(std::min(rpm, static_cast<scalar_t>(UINT16_MAX)));
@@ -712,10 +728,14 @@ public:
         const scalar_t normalized_acc = std::min(std::abs(acc), 1.0); 
         const uint8_t acc_hex = static_cast<uint8_t>(normalized_acc * 255);
         // Command format: [addr][0xF6][direction][speed_h][speed_l][acc][sync][checksum]
+
+        // Extract sign for direction, defaulting to configured direction for zero
+        const bool is_negative = (vel < 0);
+        const bool use_ccw = (is_negative == (_config.dir_pin_mode == DirPinMode::CW));
         std::array<uint8_t, 8> code = {
             _config.addr,                          // Address
             0xF6,                          // Command code
-            static_cast<uint8_t>(_config.dir_pin_mode),// Direction (0=CW, 1=CCW)
+            static_cast<uint8_t>(use_ccw ? DirPinMode::CCW : DirPinMode::CW),    // Direction (0=CW, 1=CCW)
             static_cast<uint8_t>(rpm_hex >> 8),  // Speed high byte
             static_cast<uint8_t>(rpm_hex & 0xFF),// Speed low byte
             acc_hex,                       // Acceleration
@@ -726,7 +746,7 @@ public:
         _command_transaction(code);
     }
 
-    inline void pos_control(scalar_t pos, scalar_t vel, scalar_t acc, bool sync_flag=false) {
+    inline void position_control(scalar_t pos, scalar_t vel, scalar_t acc, bool sync_flag=false) {
         // Convert velocity from rad/s to RPM, clamped to uint16 range
         const scalar_t rpm = std::abs(vel) * 60.0 / (2.0 * M_PI) * _config.reducer_ratio;
         const uint16_t rpm_hex = static_cast<uint16_t>(std::min(rpm, static_cast<scalar_t>(UINT16_MAX)));
@@ -742,11 +762,18 @@ public:
         // Calculate required pulses for position, accounting for gear ratio
         const uint32_t pulse_count = static_cast<uint32_t>(std::abs(pos) / step_size * _config.reducer_ratio);
 
+        // Extract sign for direction, defaulting to configured direction for zero
+        const bool is_negative = (pos < 0);
+        // Determine direction based on sign and configured direction
+        // If both negative and CW, or both positive and CCW, use CCW
+        // If signs differ (negative and CCW, or positive and CW), use CW
+        const bool use_ccw = (is_negative == (_config.dir_pin_mode == DirPinMode::CW));
+
         // Command format: [addr][0xFD][direction][speed_l][speed_h][acc][pulse0][pulse1][pulse2][pulse3][mode][sync][checksum]
         std::array<uint8_t, 13> code = {
             _config.addr,                              // Address
             0xFD,                              // Command code
-            static_cast<uint8_t>(_config.dir_pin_mode),    // Direction (0=CW, 1=CCW)
+            static_cast<uint8_t>(use_ccw ? DirPinMode::CCW : DirPinMode::CW),    // Direction (0=CW, 1=CCW)
             static_cast<uint8_t>(rpm_hex >> 8),     // Speed high byte
             static_cast<uint8_t>(rpm_hex & 0xFF),    // Speed low byte
             acc_hex,                           // Acceleration
@@ -760,6 +787,11 @@ public:
         };
 
         _command_transaction(code);
+    }
+
+    inline void homing() {
+        position_control(0, HOMING_VEL, HOMING_ACC);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
 
 protected:

@@ -11,9 +11,6 @@ namespace timr {
 namespace driver {
 
 class SerialManipulatorDriver {
-protected:
-    int _can_socket;
-    std::array<std::unique_ptr<JointDriver>, DOF> _joints;
 public:    
     explicit SerialManipulatorDriver(const std::string& robot_description_path) {
         // Validate file exists
@@ -30,14 +27,17 @@ public:
         }
 
         // Validate required fields
-        if (!robot_description["spec"]["jointDescriptionPaths"] || !robot_description["spec"]["canConfig"]) {
+        if (!robot_description["spec"]["jointDescriptionPaths"] || !robot_description["spec"]["canInterface"]) {
             throw std::runtime_error("Missing required fields in robot description");
         }
+        
+        _config.api_version = robot_description["apiVersion"].as<std::string>();
+        _config.name = robot_description["metadata"]["name"].as<std::string>();
+        _config.kind = robot_description["kind"].as<std::string>();
 
         // Get CAN interface config
-        const auto& can_config = robot_description["spec"]["canConfig"];
-        std::string can_interface = can_config["canInterface"].as<std::string>();
-        _can_socket = bind_can_socket(can_interface);
+        std::string can_interface_name = robot_description["spec"]["canInterface"]["name"].as<std::string>();
+        _can_socket = bind_can_socket(can_interface_name);
 
         const auto& joint_description_paths = robot_description["spec"]["jointDescriptionPaths"];
         
@@ -61,10 +61,17 @@ public:
     
     ~SerialManipulatorDriver() {
         homing();
+        std::cout << "Homing complete!" << std::endl;
         if (_can_socket >= 0) {
             close(_can_socket);
         }
     }
+
+    struct Config {
+        std::string api_version;
+        std::string name;
+        std::string kind;
+    };
 
     inline void emergency_stop() {
         for (dof_size_t i = 0; i < DOF; ++i) {
@@ -74,15 +81,13 @@ public:
     }
     inline void position_control(std::array<scalar_t, DOF> positions, std::array<scalar_t, DOF> velocities, std::array<scalar_t, DOF> accelerations) {
         for (dof_size_t i = 0; i < DOF; ++i) {
-            _joints[i]->pos_control(positions[i], velocities[i], accelerations[i]);
+            _joints[i]->position_control(positions[i], velocities[i], accelerations[i]);
         }
     }
-    inline void homing(std::array<scalar_t, DOF> velocities = {10,10,10,10,10,10}, 
-                        std::array<scalar_t, DOF> acc = {0.1,0.1,0.1,0.1,0.1,0.1}) {
+    inline void homing() {
         for (int i = DOF-1; i >= 0; --i) {
-            _joints[i]->pos_control(0, velocities[i], acc[i]);
+            _joints[i]->homing();
             std::cout << "Homing joint " << i+1 << std::endl;
-            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
     }
 
@@ -100,6 +105,11 @@ public:
         }
         return velocities; 
     }
+
+protected:
+    int _can_socket;
+    Config _config;
+    std::array<std::unique_ptr<JointDriver>, DOF> _joints;
 
 };
 
