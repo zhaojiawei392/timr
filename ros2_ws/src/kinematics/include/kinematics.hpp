@@ -16,9 +16,10 @@
  */
 
 #pragma once
-#include "qpOASES.hpp"
 #include "dqpose.hpp"
-#include "nlohmann/json.hpp"
+#include <qpOASES.hpp>
+#include <nlohmann/json.hpp>
+#include <yaml-cpp/yaml.h>
 #include <memory>
 #include <vector>
 #include <array>

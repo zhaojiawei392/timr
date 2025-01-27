@@ -32,8 +32,8 @@ private:
         static Pose<scalar_t> initial_pose;
         static Translation<scalar_t> initial_translation;
         static Rotation<scalar_t> initial_rotation;
-        constexpr scalar_t RADIUS = 0.05;
-        constexpr scalar_t RAD_SPEED = 0.00003;
+        constexpr scalar_t RADIUS = 0.1;
+        constexpr scalar_t RAD_SPEED = 0.003;
         // Store initial pose when first message arrives
         if (!_initialized) {
             initial_pose = Pose<scalar_t>(
@@ -98,7 +98,7 @@ public:
 
             
         _timer = this->create_wall_timer(
-            std::chrono::milliseconds(100),
+            std::chrono::milliseconds(4),
             std::bind(&ConsciousNode::_callback_timer, this));
         
         RCLCPP_INFO(this->get_logger(), "Conscious node initialized");

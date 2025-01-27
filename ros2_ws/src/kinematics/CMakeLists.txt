@@ -15,9 +15,7 @@ find_package(sensor_msgs REQUIRED)
 add_executable(kinematics_node src/kinematics-node.cpp)
 target_include_directories(kinematics_node PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../utils
-    ${CMAKE_CURRENT_SOURCE_DIR}/../external/json/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../external/qpOASES/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../libs
 )
 
 ament_target_dependencies(kinematics_node

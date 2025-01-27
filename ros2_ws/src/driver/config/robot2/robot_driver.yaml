@@ -1,6 +1,6 @@
 apiVersion: serialmanipulatordriver.timr.io/v1alpha1
 metadata:
-  name: robotDriver
+  name: robotDriver2
   description: Robot driver configuration
 kind: SerialManipulatorDriver
 spec:

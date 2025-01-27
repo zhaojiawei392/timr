@@ -14,7 +14,7 @@ find_package(geometry_msgs REQUIRED)
 add_executable(conscious_node src/conscious-main.cpp)
 target_include_directories(conscious_node PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../utils
+    ${CMAKE_CURRENT_SOURCE_DIR}/../libs
 )
 
 ament_target_dependencies(conscious_node

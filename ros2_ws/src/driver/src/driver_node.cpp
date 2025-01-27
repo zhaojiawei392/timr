@@ -73,8 +73,10 @@ public:
         RCLCPP_INFO(this->get_logger(), "Driver node Created");
     }
     
-    bool initialize(const std::string& robot_driver_description_path) {        
+    bool initialize() {        
         RCLCPP_INFO(this->get_logger(), "Initializing driver node...");
+        this->declare_parameter("robotDriverDescriptionPath", "");
+        std::string robot_driver_description_path = this->get_parameter("robotDriverDescriptionPath").as_string();
         // Check if file exists first
         std::ifstream file(robot_driver_description_path);
         if (!file.good()) {
@@ -200,24 +202,7 @@ int run_driver_node(int argc, char** argv)
     auto node = std::make_shared<DriverNode>();
     global_node = node;
 
-    // Load parameters from yaml file
-    std::string param_file = "/home/kai/Projects/timr/ros2_ws/src/driver/config/driver_node.yaml";
-    if (!std::filesystem::exists(param_file)) {
-        RCLCPP_ERROR(rclcpp::get_logger("driver_node"), "Parameter file not found: %s", param_file.c_str());
-        rclcpp::shutdown();
-        return 1;
-    }
-
-    YAML::Node params = YAML::LoadFile(param_file);
-    std::string robot_driver_description_path = params["robotDriverDescriptionPath"].as<std::string>();
-
-    if (robot_driver_description_path.empty()) {
-        RCLCPP_ERROR(rclcpp::get_logger("driver_node"), "robotDriverDescriptionPath not found in parameter file");
-        rclcpp::shutdown();
-        return 1;
-    }
-
-    if (!node->initialize(robot_driver_description_path)) {
+    if (!node->initialize()) {
         RCLCPP_ERROR(node->get_logger(), "Failed to initialize driver node.");
         rclcpp::shutdown();
         return 1;
