@@ -69,7 +69,7 @@ public:
         HOLD = 0x02        // Always enabled regardless of EN pin state
     };
 
-    enum class DirPinMode : uint8_t {
+    enum class MotorPlusDir : uint8_t {
         CW = 0x00,   // Clockwise - positive direction when Dir pin is active
         CCW = 0x01   // Counter-clockwise - positive direction when Dir pin is active
     };
@@ -129,7 +129,7 @@ public:
         PulseMode pulse_mode;                             // Control mode
         CommMode comm_mode;                               // Communication interface mode
         EnPinMode en_pin_mode;                           // Enable pin configuration
-        DirPinMode dir_pin_mode;                         // Direction pin configuration
+        MotorPlusDir motor_plus_dir;                         // Direction pin configuration
         uint8_t microstep;                               // Microstepping setting (1-256)
         EnabledState interpolation;                       // Trajectory smoothing
         EnabledState auto_screen_off;                     // Display power saving
@@ -150,7 +150,7 @@ public:
     static inline Config config_from_yaml(const std::string& yaml_path) {
         // Validate file exists
         if (!std::filesystem::exists(yaml_path)) {
-            throw std::runtime_error("Motor description file not found: " + yaml_path);
+            throw std::runtime_error("JointDriver: Motor description file not found: " + yaml_path);
         }
 
         // Load and parse YAML
@@ -158,7 +158,7 @@ public:
         try {
             yaml = YAML::LoadFile(yaml_path);
         } catch (const YAML::Exception& e) {
-            throw std::runtime_error("Failed to parse motor description YAML: " + std::string(e.what()));
+            throw std::runtime_error("JointDriver: Failed to parse motor description YAML: " + std::string(e.what()));
         }
 
         Config config;
@@ -169,7 +169,7 @@ public:
 
         // Validate required fields
         if (!yaml["spec"]) {
-            throw std::runtime_error("Missing required 'spec' field in motor description");
+            throw std::runtime_error("JointDriver: Missing required 'spec' field in motor description");
         }
         auto spec = yaml["spec"];
         
@@ -180,16 +180,19 @@ public:
         } else if (spec["motorStepAngle"].as<double>() == 0.9) {
             config.motor_step_angle = MotorStepAngle::MOTOR_0_9_DEG;
         } else {
-            throw std::runtime_error("Invalid motor step angle: " + spec["motorStepAngle"].as<std::string>() + ", valid options are: 0.9, 1.8");
+            throw std::runtime_error("JointDriver: Invalid motor step angle: " + spec["motorStepAngle"].as<std::string>() + ", valid options are: 0.9, 1.8");
         }
         config.microstep = spec["microstep"].as<uint8_t>();
         config.reducer_ratio = spec["reducerRatio"].as<uint8_t>();
-        if (spec["positiveDirection"].as<std::string>() == "ccw") {
-            config.dir_pin_mode = DirPinMode::CCW;
-        } else if (spec["positiveDirection"].as<std::string>() == "cw") {
-            config.dir_pin_mode = DirPinMode::CW;
+        if (spec["jointPositiveDirection"].as<std::string>() == "ccw") {
+            config.motor_plus_dir = MotorPlusDir::CCW;
+        } else if (spec["jointPositiveDirection"].as<std::string>() == "cw") {
+            config.motor_plus_dir = MotorPlusDir::CW;
         } else {
-            throw std::runtime_error("Invalid positive direction: " + spec["positiveDirection"].as<std::string>() + ", valid options are: ccw, cw");
+            throw std::runtime_error("JointDriver: Invalid positive direction: " + spec["jointPositiveDirection"].as<std::string>() + ", valid options are: ccw, cw");
+        }
+        if (spec["reducerChangeDirection"].as<bool>()) {
+            config.motor_plus_dir = (config.motor_plus_dir == MotorPlusDir::CCW) ? MotorPlusDir::CW : MotorPlusDir::CCW;
         }
         std::string plus_mode = spec["pulseMode"].as<std::string>();
         if (plus_mode == "foc") {
@@ -201,7 +204,7 @@ public:
         } else if (plus_mode == "esi") {
             config.pulse_mode = PulseMode::ESI_RCO;
         } else {
-            throw std::runtime_error("Invalid pulse mode: " + plus_mode + ", valid options are: foc, open, off, esi");
+            throw std::runtime_error("JointDriver: Invalid pulse mode: " + plus_mode + ", valid options are: foc, open, off, esi");
         }
 
         std::string comm_mode = spec["communicationMode"].as<std::string>();
@@ -214,7 +217,7 @@ public:
         } else if (comm_mode == "esi") {
             config.comm_mode = CommMode::ESI_ALO;
         } else {
-            throw std::runtime_error("Invalid communication mode: " + comm_mode + ", valid options are: can, uart, off, esi");
+            throw std::runtime_error("JointDriver: Invalid communication mode: " + comm_mode + ", valid options are: can, uart, off, esi");
         }
 
         std::string en_pin_mode = spec["enPinMode"].as<std::string>();
@@ -225,7 +228,7 @@ public:
         } else if (en_pin_mode == "low") {
             config.en_pin_mode = EnPinMode::LOW_ACTIVE;
         } else {
-            throw std::runtime_error("Invalid en_pin_mode: " + en_pin_mode + ", valid options are: hold, high, low");
+            throw std::runtime_error("JointDriver: Invalid en_pin_mode: " + en_pin_mode + ", valid options are: hold, high, low");
         }
         config.interpolation = spec["interpolationEnabled"].as<bool>() ? EnabledState::ENABLED : EnabledState::DISABLED;
         config.auto_screen_off = spec["autoScreenOff"].as<bool>() ? EnabledState::ENABLED : EnabledState::DISABLED;
@@ -247,7 +250,7 @@ public:
             case 256000: config.uart_baudrate = BaudRate::BAUD_256000; break;
             case 512000: config.uart_baudrate = BaudRate::BAUD_512000; break;
             case 921600: config.uart_baudrate = BaudRate::BAUD_921600; break;
-            default: throw std::runtime_error("Invalid UART baud rate: " + std::to_string(uart_baud));
+            default: throw std::runtime_error("JointDriver: Invalid UART baud rate: " + std::to_string(uart_baud));
         }
 
         uint32_t can_baud = spec["canBaudrate"].as<uint32_t>();
@@ -262,7 +265,7 @@ public:
             case 500000: config.can_baudrate = CanBaudRate::CAN_500K; break;
             case 800000: config.can_baudrate = CanBaudRate::CAN_800K; break;
             case 1000000: config.can_baudrate = CanBaudRate::CAN_1M; break;
-            default: throw std::runtime_error("Invalid CAN baud rate: " + std::to_string(can_baud));
+            default: throw std::runtime_error("JointDriver: Invalid CAN baud rate: " + std::to_string(can_baud));
         }
 
         std::string checksum_type = spec["checksumType"].as<std::string>();
@@ -275,7 +278,7 @@ public:
         } else if (checksum_type == "modbus") {
             config.checksum_type = ChecksumType::MODBUS;
         } else {
-            throw std::runtime_error("Invalid checksum_type: " + checksum_type + ", valid options are: fixed_6b, xor, crc_8, modbus");
+            throw std::runtime_error("JointDriver: Invalid checksum_type: " + checksum_type + ", valid options are: fixed_6b, xor, crc_8, modbus");
         }
 
         std::string response_type = spec["responseType"].as<std::string>();
@@ -290,7 +293,7 @@ public:
         } else if (response_type == "other") {
             config.response_type = ResponseType::OTHER;
         } else {
-            throw std::runtime_error("Invalid response_type: " + response_type + ", valid options are: none, receive, reached, both, other");
+            throw std::runtime_error("JointDriver: Invalid response_type: " + response_type + ", valid options are: none, receive, reached, both, other");
         }
         // Protection settings
         config.stall_protection = spec["stallProtectionEnabled"].as<bool>() ? EnabledState::ENABLED : EnabledState::DISABLED;
@@ -317,7 +320,7 @@ public:
             static_cast<uint8_t>(config.pulse_mode),
             static_cast<uint8_t>(config.comm_mode),
             static_cast<uint8_t>(config.en_pin_mode),
-            static_cast<uint8_t>(DirPinMode::CCW),   // Fixed ccw basic direction
+            static_cast<uint8_t>(MotorPlusDir::CCW),   // Fixed ccw basic + direction
             config.microstep,
             
             // Feature settings
@@ -467,7 +470,7 @@ public:
         auto response = can_frames_to_serial_data<6>(frames_response);
 
         // Extract sign and velocity from response
-        bool is_negative = (_config.dir_pin_mode == DirPinMode::CCW) ? 
+        bool is_negative = (_config.motor_plus_dir == MotorPlusDir::CCW) ? 
             (response[2] == 0x01) : (response[2] == 0x00);
         
         // Combine 2 bytes into velocity value (RPM) - little endian
@@ -495,7 +498,7 @@ public:
         auto response = can_frames_to_serial_data<6>(frames_response);
 
         // Extract sign and position from response
-        bool is_negative = (_config.dir_pin_mode == DirPinMode::CCW) ? 
+        bool is_negative = (_config.motor_plus_dir == MotorPlusDir::CCW) ? 
             (response[2] == 0x01) : (response[2] == 0x00);
         
         // Combine 4 bytes into position value (little endian)
@@ -525,7 +528,7 @@ public:
         auto response = can_frames_to_serial_data<8>(frames_response);
 
         // Extract sign and error from response
-        bool is_negative = (_config.dir_pin_mode == DirPinMode::CCW) ? 
+        bool is_negative = (_config.motor_plus_dir == MotorPlusDir::CCW) ? 
             (response[2] == 0x01) : (response[2] == 0x00);
         
         // Combine 4 bytes into error value (little endian)
@@ -555,7 +558,7 @@ public:
         auto response = can_frames_to_serial_data<8>(frames_response);
 
         // Extract sign and position from response
-        bool is_negative = (_config.dir_pin_mode == DirPinMode::CCW) ? 
+        bool is_negative = (_config.motor_plus_dir == MotorPlusDir::CCW) ? 
             (response[2] == 0x01) : (response[2] == 0x00);
         
         // Combine 4 bytes into position value (little endian)
@@ -585,7 +588,7 @@ public:
         auto response = can_frames_to_serial_data<8>(frames_response);
 
         // Extract sign and position from response, reversing if direction is CW
-        bool is_negative = (_config.dir_pin_mode == DirPinMode::CCW) ? 
+        bool is_negative = (_config.motor_plus_dir == MotorPlusDir::CCW) ? 
             (response[2] == 0x01) : (response[2] == 0x00);
         // Combine 4 bytes into position value (little endian)
         uint32_t position = static_cast<uint32_t>(response[3]) |
@@ -731,11 +734,11 @@ public:
 
         // Extract sign for direction, defaulting to configured direction for zero
         const bool is_negative = (vel < 0);
-        const bool use_ccw = (is_negative == (_config.dir_pin_mode == DirPinMode::CW));
+        const bool use_ccw = (is_negative == (_config.motor_plus_dir == MotorPlusDir::CW));
         std::array<uint8_t, 8> code = {
             _config.addr,                          // Address
             0xF6,                          // Command code
-            static_cast<uint8_t>(use_ccw ? DirPinMode::CCW : DirPinMode::CW),    // Direction (0=CW, 1=CCW)
+            static_cast<uint8_t>(use_ccw ? MotorPlusDir::CCW : MotorPlusDir::CW),    // Direction (0=CW, 1=CCW)
             static_cast<uint8_t>(rpm_hex >> 8),  // Speed high byte
             static_cast<uint8_t>(rpm_hex & 0xFF),// Speed low byte
             acc_hex,                       // Acceleration
@@ -767,13 +770,13 @@ public:
         // Determine direction based on sign and configured direction
         // If both negative and CW, or both positive and CCW, use CCW
         // If signs differ (negative and CCW, or positive and CW), use CW
-        const bool use_ccw = (is_negative == (_config.dir_pin_mode == DirPinMode::CW));
+        const bool use_ccw = (is_negative == (_config.motor_plus_dir == MotorPlusDir::CW));
 
         // Command format: [addr][0xFD][direction][speed_l][speed_h][acc][pulse0][pulse1][pulse2][pulse3][mode][sync][checksum]
         std::array<uint8_t, 13> code = {
             _config.addr,                              // Address
             0xFD,                              // Command code
-            static_cast<uint8_t>(use_ccw ? DirPinMode::CCW : DirPinMode::CW),    // Direction (0=CW, 1=CCW)
+            static_cast<uint8_t>(use_ccw ? MotorPlusDir::CCW : MotorPlusDir::CW),    // Direction (0=CW, 1=CCW)
             static_cast<uint8_t>(rpm_hex >> 8),     // Speed high byte
             static_cast<uint8_t>(rpm_hex & 0xFF),    // Speed low byte
             acc_hex,                           // Acceleration
@@ -791,7 +794,6 @@ public:
 
     inline void homing() {
         position_control(0, HOMING_VEL, HOMING_ACC);
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
 
 protected:
@@ -800,15 +802,15 @@ protected:
 
     template<std::size_t frameSize>
     inline void _send_can_frames(std::array<can_frame, frameSize>& frames) {
-        if (DEBUG) {
+#if DEBUG
             std::cout << "----------------SENDING FRAMES----------------\n";
             print_can_frames(frames);
-        }
+#endif
         // Send frames
         for (size_t i = 0; i < frames.size(); i++) {
             ssize_t nbytes = write(_can_socket, &frames[i], CAN_MTU);
             if (nbytes != CAN_MTU) {
-                throw std::runtime_error("Failed to write CAN frame: " + std::string(strerror(errno)));
+                throw std::runtime_error(_config.name + ": Failed to write CAN frame: " + std::string(strerror(errno)));
             }
         }
     }
@@ -819,7 +821,7 @@ protected:
         struct timeval timeout = {1, 0};  // 1 second timeout
         std::array<can_frame, frameSize> frames;
         if (setsockopt(_can_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-            throw std::runtime_error("setsockopt failed: " + std::string(strerror(errno)));
+            throw std::runtime_error(_config.name + ": setsockopt failed: " + std::string(strerror(errno)));
         }   
         size_t frame_count = 0;
         while (frame_count < frameSize) {
@@ -829,19 +831,19 @@ protected:
                     // No more frames to read
                     break;
                 }
-                throw std::runtime_error("read failed: " + std::string(strerror(errno)));
+                throw std::runtime_error(_config.name + ": read failed: " + std::string(strerror(errno)));
             }
             frames[frame_count++] = frame;
         }
 
         if (frame_count == 0) {
-            throw std::runtime_error("No frames received");
+            throw std::runtime_error(_config.name + ": No frames received");
         }
 
-        if (DEBUG) {
+#if DEBUG
             std::cout << "----------------READING FRAMES----------------\n";
             print_can_frames(frames);
-        }
+#endif
 
         return frames;
     }
@@ -858,7 +860,7 @@ protected:
             }
             return checksum;
         } else {
-            throw std::runtime_error("Unknown checksum type");
+            throw std::runtime_error(_config.name + ": Unknown checksum type");
         }
     }
 
@@ -871,21 +873,21 @@ protected:
         // command response is expected to be 4 bytes long [addr][common_byte][response_type][checksum]
         auto read_serial_data = can_frames_to_serial_data<4>(read_frames);
         if (read_serial_data.back() != crc8_checksum(read_serial_data.data(), read_serial_data.size() - 1)) {
-            if (DEBUG) {
+#if DEBUG
                 std::cout << "Checksum error: ";
                 for (const auto& byte : read_serial_data) {
                     std::cout << std::hex << (int)byte << " ";
                 }
                 std::cout << "\n";
-            }
-            throw std::runtime_error("Checksum error");
+#endif
+            throw std::runtime_error(_config.name + ": Checksum error");
         }
 
         // Check response type and handle accordingly
         if (read_serial_data[0] == code[0] && read_serial_data[1] == code[1] && read_serial_data[2] == 0x02) {
-            if (DEBUG) {
+#if DEBUG
                 std::cout << "Command successful\n";
-            }
+#endif
             return;
         }
 
@@ -905,11 +907,11 @@ protected:
         print_frame_details();
         
         if (read_serial_data[0] == code[0] && read_serial_data[1] == code[1] && read_serial_data[2] == 0xE2) {
-            throw std::runtime_error("Condition not met.");
+            throw std::runtime_error(_config.name + ": Condition not met.");
         } else if (read_serial_data[0] == code[0] && read_serial_data[1] == 0x00 && read_serial_data[2] == 0xEE) {
-            throw std::runtime_error("Wrong command.");
+            throw std::runtime_error(_config.name + ": Wrong command.");
         } else {
-            throw std::runtime_error("Unknown error.");
+            throw std::runtime_error(_config.name + ": unknown error.");
         }
     }
 

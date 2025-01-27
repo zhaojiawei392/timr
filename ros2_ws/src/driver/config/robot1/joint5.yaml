@@ -1,20 +1,21 @@
 apiVersion: serialmanipulatordriver.timr.io/v1alpha1
 metadata:
-  name: motor1
-  description: Motor driver configuration
+  name: joint5
+  description: Joint driver configuration
 kind: JointDriver
 spec:
-  addr: 1
+  addr: 5
   motorStepAngle: 1.8
   microstep: 8
-  reducerRatio: 50
-  positiveDirection: ccw
+  reducerRatio: 36
+  reducerChangeDirection: false
+  jointPositiveDirection: ccw
   pulseMode: foc
   communicationMode: can
   enPinMode: hold
   interpolationEnabled: true
   autoScreenOff: false
-  openLoopCurrentMa: 1000
+  openLoopCurrentMa: 700
   closedLoopStallCurrentMa: 3000
   closedLoopMaxVoltageMv: 4000
   uartBaudrate: 115200

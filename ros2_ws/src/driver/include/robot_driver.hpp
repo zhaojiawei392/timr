@@ -15,7 +15,7 @@ public:
     explicit SerialManipulatorDriver(const std::string& robot_description_path) {
         // Validate file exists
         if (!std::filesystem::exists(robot_description_path)) {
-            throw std::runtime_error("Robot description file not found: " + robot_description_path);
+            throw std::runtime_error(_config.name + ": Robot description file not found: " + robot_description_path);
         }
 
         // Load and parse YAML
@@ -23,12 +23,12 @@ public:
         try {
             robot_description = YAML::LoadFile(robot_description_path);
         } catch (const YAML::Exception& e) {
-            throw std::runtime_error("Failed to parse robot description YAML: " + std::string(e.what()));
+            throw std::runtime_error(_config.name + ": Failed to parse robot description YAML: " + std::string(e.what()));
         }
 
         // Validate required fields
         if (!robot_description["spec"]["jointDescriptionPaths"] || !robot_description["spec"]["canInterface"]) {
-            throw std::runtime_error("Missing required fields in robot description");
+            throw std::runtime_error(_config.name + ": Missing required fields in robot description");
         }
         
         _config.api_version = robot_description["apiVersion"].as<std::string>();
@@ -42,7 +42,7 @@ public:
         const auto& joint_description_paths = robot_description["spec"]["jointDescriptionPaths"];
         
         if (joint_description_paths.size() != DOF) {
-            throw std::runtime_error("Number of motor descriptions (" + 
+            throw std::runtime_error(_config.name + ": Number of motor descriptions (" + 
                 std::to_string(joint_description_paths.size()) + ") does not match DOF (" + 
                 std::to_string(DOF) + ")");
         }
@@ -54,14 +54,14 @@ public:
             }
             catch (const std::exception& e) {
                 close(_can_socket);
-                throw std::runtime_error("Failed to initialize joint " + std::to_string(i) + ": " + e.what());
+                throw std::runtime_error(_config.name + ": Failed to initialize joint " + std::to_string(i) + ": " + e.what());
             }
         }
     }
     
     ~SerialManipulatorDriver() {
         homing();
-        std::cout << "Homing complete!" << std::endl;
+        std::cout << "Homing complete!\n";
         if (_can_socket >= 0) {
             close(_can_socket);
         }
@@ -77,7 +77,7 @@ public:
         for (dof_size_t i = 0; i < DOF; ++i) {
             _joints[i]->emergency_stop();
         }
-        std::cout<< "Emergency stop triggered!" << std::endl;
+        std::cout<< "Emergency stop triggered!\n";
     }
     inline void position_control(std::array<scalar_t, DOF> positions, std::array<scalar_t, DOF> velocities, std::array<scalar_t, DOF> accelerations) {
         for (dof_size_t i = 0; i < DOF; ++i) {
@@ -87,7 +87,7 @@ public:
     inline void homing() {
         for (int i = DOF-1; i >= 0; --i) {
             _joints[i]->homing();
-            std::cout << "Homing joint " << i+1 << std::endl;
+            std::cout << "Homing joint " << i+1 << "\n";
         }
     }
 

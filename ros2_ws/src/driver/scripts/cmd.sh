@@ -43,11 +43,8 @@ ros2 topic echo /joint_states
 
 # CAN bus setup
 sudo slcand -o -c -s8 /dev/ttyACM0 can0
-
-sudo ip link set can0 type can bitrate 1000000 dbitrate 2000000 fd on
+sudo ip link set can0 type can bitrate 1000000
 sudo ip link set can0 up
-
-ip link set can0 up type can bitrate 500000 sample-point 0.75 dbitrate 2000000 dsample-point 0.8 fd on
 
 # Run tests
 colcon test --packages-select driver --event-handlers console_direct+

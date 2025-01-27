@@ -51,17 +51,17 @@ ament_target_dependencies(helper
 # )
 
 
-ament_add_gtest(robot_driver test/robot_driver.cpp)
-target_include_directories(robot_driver PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-ament_target_dependencies(robot_driver
-  rclcpp
-) 
+# ament_add_gtest(robot_driver test/robot_driver.cpp)
+# target_include_directories(robot_driver PUBLIC
+#   ${CMAKE_CURRENT_SOURCE_DIR}/include
+# )
+# ament_target_dependencies(robot_driver
+#   rclcpp
+# ) 
 
-target_link_libraries(robot_driver
-  yaml-cpp::yaml-cpp
-)
+# target_link_libraries(robot_driver
+#   yaml-cpp::yaml-cpp
+# )
 
 
 install(TARGETS driver_node

@@ -8,7 +8,7 @@ namespace driver {
 
 class RobotDriverTest : public ::testing::Test {
 protected:
-    std::string robot_description_path = "/home/kai/Projects/timr/ros2_ws/src/driver/config/robot_driver.yaml";
+    std::string robot_description_path = "/home/kai/Projects/timr/ros2_ws/src/driver/config/robot2/robot_driver.yaml";
 public:
 
     void SetUp() override {
@@ -33,6 +33,7 @@ TEST_F(RobotDriverTest, TEST_CONSTRUCTOR_FROM_YAML) {
 TEST_F(RobotDriverTest, TEST_POS_CONTROL) {
     if (TEST_WITH_REAL_DRIVER) {
         timr::driver::SerialManipulatorDriver robot_driver(robot_description_path);
+        sleep(2);
         EXPECT_NO_THROW(robot_driver.position_control({10, 10, 10, 10, 10, 10}, {0.5, 0.5, 0.5, 0.5, 0.5, 0.5}, {0.1, 0.1, 0.1, 0.1, 0.1, 0.1}));
         sleep(5);
     }

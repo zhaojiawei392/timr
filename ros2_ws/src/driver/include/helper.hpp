@@ -14,18 +14,18 @@
 
 // CAN Bus Headers
 #include <linux/can.h>
+#define DEBUG false
 
 namespace timr {
 
 namespace driver {
 
+constexpr uint8_t DOF = 6;
 using dof_size_t = uint8_t;
 using scalar_t = double;
-constexpr dof_size_t DOF = 6;
-constexpr bool DEBUG = false;
+constexpr bool TEST_WITH_REAL_DRIVER = true;
 constexpr scalar_t HOMING_VEL = 0.5;
 constexpr scalar_t HOMING_ACC = 0.1;
-constexpr bool TEST_WITH_REAL_DRIVER = true;
 
 constexpr uint8_t crc8_table[256] = {
 0x00, 0x5E, 0xBC, 0xE2, 0x61, 0x3F, 0xDD, 0x83, 0xC2, 0x9C, 0x7E, 0x20, 0xA3, 0xFD, 0x1F, 0x41,
