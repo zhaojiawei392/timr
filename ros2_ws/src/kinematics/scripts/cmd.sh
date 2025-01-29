@@ -1,5 +1,5 @@
 # Initialize joint states
-ros2 topic pub /joint_states sensor_msgs/msg/JointState "{
+ros2 topic pub /joint_state sensor_msgs/msg/JointState "{
   header: {
     stamp: {sec: 0}, 
     frame_id: 'base_link'
@@ -11,7 +11,7 @@ ros2 topic pub /joint_states sensor_msgs/msg/JointState "{
 }"
 
 # Publish target pose
-ros2 topic pub -r 100 /target_poses geometry_msgs/msg/Pose "{
+ros2 topic pub -r 100 /target_pose geometry_msgs/msg/Pose "{
   position: {
     x: 0.2,
     y: 0.0,
@@ -26,7 +26,7 @@ ros2 topic pub -r 100 /target_poses geometry_msgs/msg/Pose "{
 }"
 
 # Set target joint states
-ros2 topic pub -r 100 /target_joint_states sensor_msgs/msg/JointState "{
+ros2 topic pub -r 100 /target_joint_state sensor_msgs/msg/JointState "{
   header: {
     stamp: {sec: 0},
     frame_id: 'base_link'
@@ -38,8 +38,8 @@ ros2 topic pub -r 100 /target_joint_states sensor_msgs/msg/JointState "{
 }"
 
 # Monitor topics
-ros2 topic echo /target_joint_states
-ros2 topic echo /joint_states
+ros2 topic echo /target_joint_state
+ros2 topic echo /joint_state
 
 # CAN bus setup
 sudo slcand -o -c -s8 /dev/ttyACM0 can0

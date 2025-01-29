@@ -37,13 +37,13 @@ public:
     : _can_socket(can_socket) {
         _config = config_from_yaml(yaml_path);
         send_config_to_driver(_config);
-        enable(false);
+        enable(true);
     }
 
     explicit JointDriver(int can_socket, Config config)
     : _can_socket(can_socket), _config(config) {
         send_config_to_driver(_config);
-        enable(false);
+        enable(true);
     }
 
     enum class MotorStepAngle : uint8_t {
@@ -151,8 +151,8 @@ public:
         scalar_t position_lower_bound;
         scalar_t velocity_upper_bound;
         scalar_t velocity_lower_bound;
-        scalar_t acceleration_upper_bound;
-        scalar_t acceleration_lower_bound;
+        scalar_t effort_upper_bound;
+        scalar_t effort_lower_bound;
     };
 
     static inline Config config_from_yaml(const std::string& yaml_path) {
@@ -309,6 +309,14 @@ public:
         config.stall_current_threshold_ma = spec["stallCurrentThresholdMa"].as<uint16_t>();
         config.stall_detection_ms = spec["stallDetectionMs"].as<uint16_t>();
         config.position_tolerance_deg = spec["positionToleranceDeg"].as<double>();
+
+        config.position_upper_bound = spec["jointBounds"]["positionUpperBound"].as<scalar_t>();
+        config.position_lower_bound = spec["jointBounds"]["positionLowerBound"].as<scalar_t>();
+        config.velocity_upper_bound = spec["jointBounds"]["velocityUpperBound"].as<scalar_t>();
+        config.velocity_lower_bound = spec["jointBounds"]["velocityLowerBound"].as<scalar_t>();
+        config.effort_upper_bound = spec["jointBounds"]["effortUpperBound"].as<scalar_t>();
+        config.effort_lower_bound = spec["jointBounds"]["effortLowerBound"].as<scalar_t>();
+
         return config;
     }
 
@@ -730,19 +738,19 @@ public:
         _command_transaction(code);
     }
     
-    inline void velocity_control(scalar_t vel, scalar_t acc, bool sync_flag=false) {
-        // Clamp velocity and acceleration to configured bounds
+    inline void velocity_control(scalar_t vel, scalar_t effort, bool sync_flag=false) {
+        // Clamp velocity and effort to configured bounds
         vel = std::clamp(vel, _config.velocity_lower_bound, _config.velocity_upper_bound); 
-        acc = std::clamp(acc, _config.acceleration_lower_bound, _config.acceleration_upper_bound);
+        effort = std::clamp(effort, _config.effort_lower_bound, _config.effort_upper_bound);
 
         // Convert velocity from rad/s to RPM, clamped to uint16 range
         const scalar_t rpm = std::abs(vel) * 60.0 / (2.0 * M_PI) * _config.reducer_ratio;
         const uint16_t rpm_hex = static_cast<uint16_t>(std::min(rpm, static_cast<scalar_t>(UINT16_MAX)));
         
-        // Convert acceleration to control level (0-255), ensuring full range utilization
-        const scalar_t normalized_acc = std::min(std::abs(acc), 1.0); 
+        // Convert effort to control level (0-255), ensuring full range utilization
+        const scalar_t normalized_acc = std::min(std::abs(effort), 1.0); 
         const uint8_t acc_hex = static_cast<uint8_t>(normalized_acc * 255);
-        // Command format: [addr][0xF6][direction][speed_h][speed_l][acc][sync][checksum]
+        // Command format: [addr][0xF6][direction][speed_h][speed_l][effort][sync][checksum]
 
         // Extract sign for direction, defaulting to configured direction for zero
         const bool is_negative = (vel < 0);
@@ -761,18 +769,18 @@ public:
         _command_transaction(code);
     }
 
-    inline void position_control(scalar_t pos, scalar_t vel, scalar_t acc, bool sync_flag=false) {
-        // Clamp position, velocity and acceleration to configured bounds
+    inline void position_control(scalar_t pos, scalar_t vel, scalar_t effort, bool sync_flag=false) {
+        // Clamp position, velocity and effort to configured bounds
         pos = std::clamp(pos, _config.position_lower_bound, _config.position_upper_bound);
         vel = std::clamp(vel, _config.velocity_lower_bound, _config.velocity_upper_bound); 
-        acc = std::clamp(acc, _config.acceleration_lower_bound, _config.acceleration_upper_bound);
+        effort = std::clamp(effort, _config.effort_lower_bound, _config.effort_upper_bound);
 
         // Convert velocity from rad/s to RPM, clamped to uint16 range
         const scalar_t rpm = std::abs(vel) * 60.0 / (2.0 * M_PI) * _config.reducer_ratio;
         const uint16_t rpm_hex = static_cast<uint16_t>(std::min(rpm, static_cast<scalar_t>(UINT16_MAX)));
         
-        // Convert acceleration to control level (0-255), ensuring full range utilization
-        const scalar_t normalized_acc = std::min(std::abs(acc), 1.0);
+        // Convert effort to control level (0-255), ensuring full range utilization
+        const scalar_t normalized_acc = std::min(std::abs(effort), 1.0);
         const uint8_t acc_hex = static_cast<uint8_t>(normalized_acc * 255);
 
         // Calculate step size based on motor configuration
@@ -789,7 +797,7 @@ public:
         // If signs differ (negative and CCW, or positive and CW), use CW
         const bool use_ccw = (is_negative == (_config.motor_plus_dir == MotorPlusDir::CW));
 
-        // Command format: [addr][0xFD][direction][speed_l][speed_h][acc][pulse0][pulse1][pulse2][pulse3][mode][sync][checksum]
+        // Command format: [addr][0xFD][direction][speed_l][speed_h][effort][pulse0][pulse1][pulse2][pulse3][mode][sync][checksum]
         std::array<uint8_t, 13> code = {
             _config.addr,                              // Address
             0xFD,                              // Command code
@@ -811,28 +819,6 @@ public:
 
     inline void homing() {
         position_control(0, HOMING_VEL, HOMING_ACC);
-    }
-
-    /**
-     * @brief Set the bounds for the joint driver
-     * 
-     * @param position_upper 
-     * @param velocity_upper 
-     * @param acceleration_upper 
-     * @param position_lower 
-     * @param velocity_lower 
-     * @param acceleration_lower 
-     */
-    inline void set_bounds(scalar_t position_upper, scalar_t velocity_upper, scalar_t acceleration_upper,
-                         scalar_t position_lower, scalar_t velocity_lower, scalar_t acceleration_lower) {
-        _config.position_upper_bound = position_upper;
-        _config.velocity_upper_bound = velocity_upper; 
-        _config.acceleration_upper_bound = acceleration_upper;
-        _config.position_lower_bound = position_lower;
-        _config.velocity_lower_bound = velocity_lower;
-        _config.acceleration_lower_bound = acceleration_lower;
-        enable(true);
-        std::cout << _config.name << ": Joint bounds set, enabling driver.\n";
     }
 
 protected:

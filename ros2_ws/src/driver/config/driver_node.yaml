@@ -1,3 +1,4 @@
 /**:
   ros__parameters:
     robotDriverDescriptionPath: /home/kai/Projects/timr/ros2_ws/src/driver/config/robot1/robot_driver.yaml
+    samplingTimeSec: 0.004

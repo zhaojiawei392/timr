@@ -1,3 +1,5 @@
 /**:
   ros__parameters:
     robotKinematicsDescriptionPath: /home/kai/Projects/timr/ros2_ws/src/kinematics/config/robot1.yaml
+    samplingTimeSec: 0.004
+    initializationTimeoutSec: 10

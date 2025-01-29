@@ -1,7 +1,6 @@
 // ROS2 Headers
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
-#include <timr_msgs/msg/joint_bounds.hpp>
 
 // Project Headers
 #include "robot_driver.hpp"
@@ -34,7 +33,6 @@ private:
     std::unique_ptr<timr::driver::SerialManipulatorDriver> _driver;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr _pub_joint_state;
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr _sub_target_joint_state;
-    rclcpp::Subscription<timr_msgs::msg::JointBounds>::SharedPtr _sub_joint_bounds;
     rclcpp::TimerBase::SharedPtr _timer;
     sensor_msgs::msg::JointState _cached_joint_state_msg;
 
@@ -82,15 +80,9 @@ public:
     bool initialize() {        
         RCLCPP_INFO(this->get_logger(), "Initializing driver node...");
         this->declare_parameter("robotDriverDescriptionPath", "");
-        std::string robot_driver_description_path = this->get_parameter("robotDriverDescriptionPath").as_string();
-        RCLCPP_INFO(this->get_logger(), "Robot driver description path: %s", robot_driver_description_path.c_str());
-        // Check if file exists first
-        std::ifstream file(robot_driver_description_path);
-        if (!file.good()) {
-            RCLCPP_ERROR(get_logger(), "Robot description file not found: %s", robot_driver_description_path.c_str());
-            return false;
-        }
-        file.close();
+        this->declare_parameter("samplingTimeSec", 0.001);
+        const auto robot_driver_description_path = this->get_parameter("robotDriverDescriptionPath").as_string();
+        const auto sampling_time_sec = this->get_parameter("samplingTimeSec").as_double();
 
         try {
             if (!_driver) {
@@ -106,21 +98,6 @@ public:
                 RCLCPP_INFO(get_logger(), "Driver instance created successfully");
             }
 
-            rclcpp::QoS qos_profile(1);
-            qos_profile.transient_local();
-
-            // Create subscribers for joint state bounds
-            _sub_joint_bounds = this->create_subscription<timr_msgs::msg::JointBounds>(
-                "joint_bounds", qos_profile, [this](const timr_msgs::msg::JointBounds::SharedPtr msg) {
-                    _driver->set_bounds(msg->position_upper_bound, 
-                                        msg->velocity_upper_bound, 
-                                        msg->acceleration_upper_bound, 
-                                        msg->position_lower_bound, 
-                                        msg->velocity_lower_bound, 
-                                        msg->acceleration_lower_bound);
-                    RCLCPP_INFO(get_logger(), "Joint state bounds set");
-                });
-            
             RCLCPP_INFO(get_logger(), "Initializing driver...");
             std::array<scalar_t, DOF> positions = _driver->get_joint_positions();
             
@@ -136,19 +113,19 @@ public:
             for (dof_size_t i = 0; i < DOF; ++i) {
                 _cached_joint_state_msg.name[i] = "joint" + std::to_string(i + 1);
             }
-            
+
             // Create publisher for current joint states
             _pub_joint_state = create_publisher<sensor_msgs::msg::JointState>(
-                "/joint_states", 10);
+                "/joint_state", 10);
 
             // Create subscriber for target joint states
             _sub_target_joint_state = create_subscription<sensor_msgs::msg::JointState>(
-                "/target_joint_states", 10,
+                "/target_joint_state", 10,
                 std::bind(&DriverNode::_callback_target_joint_states, this, std::placeholders::_1));
 
             // Create timer for publishing current joint states
             _timer = create_wall_timer(
-                std::chrono::milliseconds(4),  // 250Hz
+                std::chrono::duration_cast<std::chrono::seconds>(std::chrono::duration<double>(sampling_time_sec)),
                 std::bind(&DriverNode::_callback_timer, this));
             RCLCPP_INFO(get_logger(), "Driver node Initialized");
             return true;
