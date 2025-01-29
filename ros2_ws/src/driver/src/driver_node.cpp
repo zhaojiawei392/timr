@@ -1,6 +1,7 @@
 // ROS2 Headers
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
+#include <timr_msgs/msg/joint_bounds.hpp>
 
 // Project Headers
 #include "robot_driver.hpp"
@@ -22,6 +23,10 @@ namespace driver {
 
 volatile sig_atomic_t kill_this_node = 0;
 
+void signal_handler([[maybe_unused]] int signum) {
+    kill_this_node = 1;
+}
+
 class DriverNode : public rclcpp::Node
 {
 
@@ -29,6 +34,7 @@ private:
     std::unique_ptr<timr::driver::SerialManipulatorDriver> _driver;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr _pub_joint_state;
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr _sub_target_joint_state;
+    rclcpp::Subscription<timr_msgs::msg::JointBounds>::SharedPtr _sub_joint_bounds;
     rclcpp::TimerBase::SharedPtr _timer;
     sensor_msgs::msg::JointState _cached_joint_state_msg;
 
@@ -77,6 +83,7 @@ public:
         RCLCPP_INFO(this->get_logger(), "Initializing driver node...");
         this->declare_parameter("robotDriverDescriptionPath", "");
         std::string robot_driver_description_path = this->get_parameter("robotDriverDescriptionPath").as_string();
+        RCLCPP_INFO(this->get_logger(), "Robot driver description path: %s", robot_driver_description_path.c_str());
         // Check if file exists first
         std::ifstream file(robot_driver_description_path);
         if (!file.good()) {
@@ -84,17 +91,6 @@ public:
             return false;
         }
         file.close();
-
-        // Initialize message vectors first
-        _cached_joint_state_msg.name.resize(DOF);
-        _cached_joint_state_msg.position.resize(DOF);
-        _cached_joint_state_msg.velocity.resize(DOF);
-        _cached_joint_state_msg.effort.resize(DOF);  // Make sure effort is also resized
-        
-        // Set joint names
-        for (dof_size_t i = 0; i < DOF; ++i) {
-            _cached_joint_state_msg.name[i] = "joint" + std::to_string(i + 1);
-        }
 
         try {
             if (!_driver) {
@@ -109,6 +105,21 @@ public:
                 }
                 RCLCPP_INFO(get_logger(), "Driver instance created successfully");
             }
+
+            rclcpp::QoS qos_profile(1);
+            qos_profile.transient_local();
+
+            // Create subscribers for joint state bounds
+            _sub_joint_bounds = this->create_subscription<timr_msgs::msg::JointBounds>(
+                "joint_bounds", qos_profile, [this](const timr_msgs::msg::JointBounds::SharedPtr msg) {
+                    _driver->set_bounds(msg->position_upper_bound, 
+                                        msg->velocity_upper_bound, 
+                                        msg->acceleration_upper_bound, 
+                                        msg->position_lower_bound, 
+                                        msg->velocity_lower_bound, 
+                                        msg->acceleration_lower_bound);
+                    RCLCPP_INFO(get_logger(), "Joint state bounds set");
+                });
             
             RCLCPP_INFO(get_logger(), "Initializing driver...");
             std::array<scalar_t, DOF> positions = _driver->get_joint_positions();
@@ -116,6 +127,16 @@ public:
             RCLCPP_INFO(get_logger(), "Initial joint positions: %f, %f, %f, %f, %f, %f", 
                         positions[0], positions[1], positions[2], positions[3], positions[4], positions[5]);
 
+            _cached_joint_state_msg.name.resize(DOF);
+            _cached_joint_state_msg.position.resize(DOF);
+            _cached_joint_state_msg.velocity.resize(DOF);
+            _cached_joint_state_msg.effort.resize(DOF);
+            
+            // Set joint names
+            for (dof_size_t i = 0; i < DOF; ++i) {
+                _cached_joint_state_msg.name[i] = "joint" + std::to_string(i + 1);
+            }
+            
             // Create publisher for current joint states
             _pub_joint_state = create_publisher<sensor_msgs::msg::JointState>(
                 "/joint_states", 10);
@@ -159,92 +180,29 @@ public:
 
 };
 
-std::shared_ptr<DriverNode> global_node = nullptr;
-
-void signal_handler([[maybe_unused]] int signum) {
-    // Log which signal we received
-    if (global_node) {
-        try {
-            RCLCPP_INFO(global_node->get_logger(), "Received signal %d, initiating shutdown...", signum);
-        } catch (...) {}
-    }
-
-    // Set kill flag
-    kill_this_node = 1;
-
-    if (global_node) {
-        try {
-            global_node->stop_timer();
-            global_node->cleanup_driver();
-        } catch (...) {}
-    }
-
-    // For SIGTERM or SIGQUIT, exit directly after cleanup
-    if (signum == SIGTERM || signum == SIGQUIT) {
-        exit(0);
-    }
-}
-
 int run_driver_node(int argc, char** argv)
 {
-    // Setup signal handlers for multiple signals
-    struct sigaction sa;
-    sa.sa_handler = signal_handler;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
-    
-    sigaction(SIGINT, &sa, NULL);   // Ctrl+C
-    sigaction(SIGTERM, &sa, NULL);  // kill <pid>
-    sigaction(SIGQUIT, &sa, NULL);  // Ctrl+backslash
+    signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);
+    signal(SIGQUIT, signal_handler);
     
     rclcpp::init(argc, argv);
     
     auto node = std::make_shared<DriverNode>();
-    global_node = node;
 
     if (!node->initialize()) {
         RCLCPP_ERROR(node->get_logger(), "Failed to initialize driver node.");
         rclcpp::shutdown();
         return 1;
     }
-    try {
-        while (rclcpp::ok() && !kill_this_node) {
-            rclcpp::spin_some(node);
-            // Add small sleep to prevent CPU hogging
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-    } catch (const std::exception& e) {
-        RCLCPP_ERROR(node->get_logger(), "Error during node execution: %s", e.what());
+    while (rclcpp::ok() && !kill_this_node) {
+        rclcpp::spin_some(node);
+        // Add small sleep to prevent CPU hogging
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
     RCLCPP_INFO(node->get_logger(), "Shutting down driver node...");
-    
-    // Cleanup in correct order with timeout protection
-    if (node) {
-        std::promise<void> cleanup_promise;
-        auto cleanup_future = cleanup_promise.get_future();
-        
-        std::thread cleanup_thread([&node, &cleanup_promise]() {
-            node->stop_timer();
-            node->cleanup_driver();
-            cleanup_promise.set_value();
-        });
-
-        // Wait for cleanup with timeout
-        if (cleanup_future.wait_for(std::chrono::seconds(3)) == std::future_status::timeout) {
-            RCLCPP_WARN(node->get_logger(), "Cleanup timed out after 3 seconds");
-        }
-
-        if (cleanup_thread.joinable()) {
-            cleanup_thread.join();
-        }
-    }
-
-    global_node.reset();
-    node.reset();
-    
     rclcpp::shutdown();
-    
     return 0;
 }
 

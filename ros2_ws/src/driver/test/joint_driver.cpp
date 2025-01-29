@@ -25,7 +25,7 @@ public:
         joint1_driver_config.pulse_mode = timr::driver::JointDriver::PulseMode::PUL_FOC;
         joint1_driver_config.comm_mode = timr::driver::JointDriver::CommMode::CAN1_MAP;
         joint1_driver_config.en_pin_mode = timr::driver::JointDriver::EnPinMode::HOLD;
-        joint1_driver_config.dir_pin_mode = timr::driver::JointDriver::DirPinMode::CCW;
+        joint1_driver_config.motor_plus_dir = timr::driver::JointDriver::MotorPlusDir::CCW;
         joint1_driver_config.microstep = 8;
         joint1_driver_config.interpolation = timr::driver::JointDriver::EnabledState::ENABLED;
         joint1_driver_config.auto_screen_off = timr::driver::JointDriver::EnabledState::DISABLED;
@@ -62,7 +62,7 @@ TEST_F(JointDriverTest, TEST_CONFIG) {
     EXPECT_EQ(config1.pulse_mode, joint1_driver_config.pulse_mode);
     EXPECT_EQ(config1.comm_mode, joint1_driver_config.comm_mode);
     EXPECT_EQ(config1.en_pin_mode, joint1_driver_config.en_pin_mode);
-    EXPECT_EQ(config1.dir_pin_mode, joint1_driver_config.dir_pin_mode);
+    EXPECT_EQ(config1.motor_plus_dir, joint1_driver_config.motor_plus_dir);
     EXPECT_EQ(config1.microstep, joint1_driver_config.microstep);
     EXPECT_EQ(config1.interpolation, joint1_driver_config.interpolation);
     EXPECT_EQ(config1.auto_screen_off, joint1_driver_config.auto_screen_off);

@@ -22,8 +22,9 @@
 #include <array>
 #include <cstdint>
 
-namespace dqpose
-{
+namespace timr {
+
+namespace dqpose {
 
 constexpr int PRINT_PRECISION = 12;
 
@@ -803,4 +804,6 @@ const UnitAxis<std::uint8_t> i_(1,0,0);
 const UnitAxis<std::uint8_t> j_(0,1,0);
 const UnitAxis<std::uint8_t> k_(0,0,1);
 
-}
+} // namespace dqpose
+
+} // namespace timr

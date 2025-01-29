@@ -6,6 +6,8 @@
 // C++ Standard Library
 #include <thread>
 #include <iostream>
+#include <vector>
+
 namespace timr {
 
 namespace driver {
@@ -106,6 +108,29 @@ public:
         return velocities; 
     }
 
+    inline void set_bounds(const std::array<scalar_t, DOF>& positions_upper_bound, 
+                            const std::array<scalar_t, DOF>& velocities_upper_bound, 
+                            const std::array<scalar_t, DOF>& accelerations_upper_bound,
+                            const std::array<scalar_t, DOF>& positions_lower_bound,
+                            const std::array<scalar_t, DOF>& velocities_lower_bound,
+                            const std::array<scalar_t, DOF>& accelerations_lower_bound) {
+        for (dof_size_t i = 0; i < DOF; ++i) {
+            _joints[i]->set_bounds(positions_upper_bound[i], velocities_upper_bound[i], accelerations_upper_bound[i], 
+                                    positions_lower_bound[i], velocities_lower_bound[i], accelerations_lower_bound[i]);
+        }
+    }   
+    inline void set_bounds(const std::vector<scalar_t>& positions_upper_bound,
+                            const std::vector<scalar_t>& velocities_upper_bound,
+                            const std::vector<scalar_t>& accelerations_upper_bound,
+                            const std::vector<scalar_t>& positions_lower_bound,
+                            const std::vector<scalar_t>& velocities_lower_bound,
+                            const std::vector<scalar_t>& accelerations_lower_bound) {
+        for (dof_size_t i = 0; i < DOF; ++i) {
+            _joints[i]->set_bounds(positions_upper_bound[i], velocities_upper_bound[i], accelerations_upper_bound[i], 
+                                    positions_lower_bound[i], velocities_lower_bound[i], accelerations_lower_bound[i]);
+        }
+    }   
+                            
 protected:
     int _can_socket;
     Config _config;

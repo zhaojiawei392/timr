@@ -37,11 +37,13 @@ public:
     : _can_socket(can_socket) {
         _config = config_from_yaml(yaml_path);
         send_config_to_driver(_config);
+        enable(false);
     }
 
     explicit JointDriver(int can_socket, Config config)
     : _can_socket(can_socket), _config(config) {
         send_config_to_driver(_config);
+        enable(false);
     }
 
     enum class MotorStepAngle : uint8_t {
@@ -145,6 +147,12 @@ public:
         uint16_t stall_current_threshold_ma;             // Current threshold for stall
         uint16_t stall_detection_ms;                     // Stall detection time
         double position_tolerance_deg;                    // Position control tolerance
+        scalar_t position_upper_bound;
+        scalar_t position_lower_bound;
+        scalar_t velocity_upper_bound;
+        scalar_t velocity_lower_bound;
+        scalar_t acceleration_upper_bound;
+        scalar_t acceleration_lower_bound;
     };
 
     static inline Config config_from_yaml(const std::string& yaml_path) {
@@ -723,6 +731,10 @@ public:
     }
     
     inline void velocity_control(scalar_t vel, scalar_t acc, bool sync_flag=false) {
+        // Clamp velocity and acceleration to configured bounds
+        vel = std::clamp(vel, _config.velocity_lower_bound, _config.velocity_upper_bound); 
+        acc = std::clamp(acc, _config.acceleration_lower_bound, _config.acceleration_upper_bound);
+
         // Convert velocity from rad/s to RPM, clamped to uint16 range
         const scalar_t rpm = std::abs(vel) * 60.0 / (2.0 * M_PI) * _config.reducer_ratio;
         const uint16_t rpm_hex = static_cast<uint16_t>(std::min(rpm, static_cast<scalar_t>(UINT16_MAX)));
@@ -750,6 +762,11 @@ public:
     }
 
     inline void position_control(scalar_t pos, scalar_t vel, scalar_t acc, bool sync_flag=false) {
+        // Clamp position, velocity and acceleration to configured bounds
+        pos = std::clamp(pos, _config.position_lower_bound, _config.position_upper_bound);
+        vel = std::clamp(vel, _config.velocity_lower_bound, _config.velocity_upper_bound); 
+        acc = std::clamp(acc, _config.acceleration_lower_bound, _config.acceleration_upper_bound);
+
         // Convert velocity from rad/s to RPM, clamped to uint16 range
         const scalar_t rpm = std::abs(vel) * 60.0 / (2.0 * M_PI) * _config.reducer_ratio;
         const uint16_t rpm_hex = static_cast<uint16_t>(std::min(rpm, static_cast<scalar_t>(UINT16_MAX)));
@@ -794,6 +811,28 @@ public:
 
     inline void homing() {
         position_control(0, HOMING_VEL, HOMING_ACC);
+    }
+
+    /**
+     * @brief Set the bounds for the joint driver
+     * 
+     * @param position_upper 
+     * @param velocity_upper 
+     * @param acceleration_upper 
+     * @param position_lower 
+     * @param velocity_lower 
+     * @param acceleration_lower 
+     */
+    inline void set_bounds(scalar_t position_upper, scalar_t velocity_upper, scalar_t acceleration_upper,
+                         scalar_t position_lower, scalar_t velocity_lower, scalar_t acceleration_lower) {
+        _config.position_upper_bound = position_upper;
+        _config.velocity_upper_bound = velocity_upper; 
+        _config.acceleration_upper_bound = acceleration_upper;
+        _config.position_lower_bound = position_lower;
+        _config.velocity_lower_bound = velocity_lower;
+        _config.acceleration_lower_bound = acceleration_lower;
+        enable(true);
+        std::cout << _config.name << ": Joint bounds set, enabling driver.\n";
     }
 
 protected:

@@ -10,7 +10,7 @@ using scalar_t = double;
 constexpr dof_size_t DOF = 6;
 volatile sig_atomic_t kill_this_node = 0;
 
-void signal_handler(int signum) {
+void signal_handler([[maybe_unused]] int signum) {
     kill_this_node = 1;
 }
 
@@ -27,7 +27,7 @@ private:
     
     void _callback_poses(const geometry_msgs::msg::Pose::SharedPtr msg)
     {
-        using namespace dqpose;
+        using namespace timr::dqpose;
         static size_t iteration = 0;
         static Pose<scalar_t> initial_pose;
         static Translation<scalar_t> initial_translation;
