@@ -14,14 +14,14 @@ spec:
   jointBounds:
     positionLowerBound: [-180, 0, 0, -175, -120, -175]
     positionUpperBound: [180, 175, 150, 175, 120, 175]
-    velocityLowerBound: [-1, -2, -3, -4, -5, -6]
-    velocityUpperBound: [1, 2, 3, 4, 5, 6]
+    velocityLowerBound: [-1, -1, -1, -1, -1, -1]
+    velocityUpperBound: [1, 1, 1, 1, 1, 1]
     effortLowerBound: [0, 0, 0, 0, 0, 0]
     effortUpperBound: [1, 1, 1, 1, 1, 1]
   solverConfig:
-    posGain: 1
-    velGain: 100
+    posGain: 0.004
+    velGain: 1000
     translationPriority: 1
     errorGain: 50
     jointDamping: 0.0001 
-    isOpenLoop: true
+    isOpenLoop: false

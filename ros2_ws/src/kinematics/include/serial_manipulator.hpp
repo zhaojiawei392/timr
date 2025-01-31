@@ -30,7 +30,7 @@ namespace timr {
 namespace kinematics {
 
 using scalar_t = double;
-using dof_size_t = unsigned int;
+using dof_size_t = uint8_t;
 constexpr scalar_t deg2rad_factor = M_PI / 180.;
 constexpr scalar_t rad2deg_factor = 180. / M_PI;
 
@@ -417,7 +417,6 @@ public:
                 H[i*_cfg.DOF+j] = _cfg.translation_priority * Ht + (1-_cfg.translation_priority) * Hr;
                 if (i==j)
                     H[i*_cfg.DOF+j] += _cfg.joint_damping;
-                
             }
         }
 
@@ -463,25 +462,13 @@ public:
 
         // UPDATE JOINT POSITIONS, VELOCITIES, AND ACCELERATIONS
         for (dof_size_t i=0; i<_cfg.DOF; ++i) {
-            // Update target velocity to QP solution
+            std::cout << "xOpt[" << i << "]: " << xOpt[i] << std::endl;
             _data.target_joint_velocity[i] = std::clamp(xOpt[i] * _cfg.vel_gain, 
                 _data.joint_velocity_lower_bound[i], _data.joint_velocity_upper_bound[i]);
 
-            // // Calculate velocity gap between QP solution and current target velocity
-            // scalar_t vel_gap = std::abs(xOpt[i] - _data.target_joint_velocity[i]);
+            _data.target_joint_effort[i] = 0;
             
-            // // Calculate effort scaling factor:
-            // // - For small velocity changes (< 1e-6), use factor of 1.0
-            // // - For larger changes, scale inversely with velocity gap to smooth effort
-            // scalar_t acc_factor = vel_gap > 1e-6 ? 1.0 / vel_gap : 1.0;
-            
-            // // Clamp effort between 0 and 1 to limit maximum effort
-            // _data.target_joint_effort[i] = std::clamp(acc_factor, 
-            //     _data.joint_effort_lower_bound[i], _data.joint_effort_upper_bound[i]);
-            _data.target_joint_effort[i] = 1;
-            
-            // Update target position using velocity * time;
-            _data.target_joint_position[i] = std::clamp(xOpt[i] * _cfg.pos_gain, 
+            _data.target_joint_position[i] = std::clamp(_data.target_joint_position[i] + xOpt[i] * _cfg.pos_gain, 
                 _data.joint_position_lower_bound[i], _data.joint_position_upper_bound[i]);
         }
         // RESET UPDATE CHECKLIST
@@ -578,30 +565,47 @@ private:
             _data.joint_pose_derivative.front() = _data.base * _pjoints.front()->derivative(joint_position.front()) 
                                                     * _data.joint_pose.front().conj() * _data.joint_pose.back() * _data.effector;
             return;
-        }
-        if (_cfg.DOF == 2) {
+        } else if (_cfg.DOF == 2) {
             _data.joint_pose.front() = _data.base * _pjoints.front()->fkm(joint_position.front());
             _data.joint_pose_derivative.front() = _data.base * _pjoints.front()->derivative(joint_position.front()) 
                                                     * _data.joint_pose.front().conj() * _data.joint_pose.back();
             _data.joint_pose.back() = _data.joint_pose.front() * _pjoints.back()->fkm(joint_position.back()) * _data.effector;
             _data.joint_pose_derivative.back() = _data.joint_pose.front() * _pjoints.back()->derivative(joint_position.back()) * _data.effector;
             return;
-        }
-        // UPDATE FORWARD KINEMATICS
-        _data.joint_pose.front() = _data.base * _pjoints.front()->fkm(joint_position.front());
-        _data.joint_pose_derivative.front() = _data.base * _pjoints.front()->derivative(joint_position.front()) 
-                                                * _data.joint_pose.front().conj() * _data.joint_pose.back();
+        } else {
+            _data.joint_pose.front() = _data.base * _pjoints.front()->fkm(joint_position.front());
 
-        for (dof_size_t i=1; i<_cfg.DOF-1; ++i) {
-            _data.joint_pose[i] = _data.joint_pose[i-1] * _pjoints[i]->fkm(joint_position[i]);
-        }
-        _data.joint_pose.back() = _data.joint_pose[_cfg.DOF-2] * _pjoints.back()->fkm(joint_position.back()) * _data.effector;
-
-        for (dof_size_t i=1; i<_cfg.DOF-1; ++i){
-            _data.joint_pose_derivative[i] = _data.joint_pose[i-1] * _pjoints[i]->derivative(joint_position[i]) 
-                                                * _data.joint_pose[i].conj() * _data.joint_pose.back();
+            for (dof_size_t i=1; i<_cfg.DOF-1; ++i) {
+                _data.joint_pose[i] = _data.joint_pose[i-1] * _pjoints[i]->fkm(joint_position[i]);
+            }
+            _data.joint_pose.back() = _data.joint_pose[_cfg.DOF-2] * _pjoints.back()->fkm(joint_position.back()) * _data.effector;
+            
+            _data.joint_pose_derivative.front() = _data.base * _pjoints.front()->derivative(joint_position.front()) 
+                                                    * _data.joint_pose.front().conj() * _data.joint_pose.back();
+            for (dof_size_t i=1; i<_cfg.DOF-1; ++i){
+                _data.joint_pose_derivative[i] = _data.joint_pose[i-1] * _pjoints[i]->derivative(joint_position[i]) 
+                                                    * _data.joint_pose[i].conj() * _data.joint_pose.back();
+            }
+            _data.joint_pose_derivative.back() = _data.joint_pose[_cfg.DOF-2] * _pjoints.back()->derivative(joint_position.back()) * _data.effector;
         }
     }
+
+    // void _update_kinematics() {
+    //     _data.joint_poses.front() = _data.base * _pjoints.front()->fkm(_data.joint_positions.front());
+    //     for (dof_size_t i=1; i<DOF-1; ++i) {
+    //         _data.joint_poses[i] = _data.joint_poses[i-1] * _pjoints[i]->fkm(_data.joint_positions[i]);
+    //     }
+    //     _data.joint_poses.back() = _data.joint_poses[DOF-2] * _pjoints.back()->fkm(_data.joint_positions.back()) * _data.effector;
+
+    //     _data.joint_pose_derivatives.front() = _data.base * _pjoints.front()->derivative(_data.joint_positions.front()) 
+    //                                             * _data.joint_poses.front().conj() * _data.joint_poses.back();
+    //     for (dof_size_t i=1; i<DOF-1; ++i){
+    //         _data.joint_pose_derivatives[i] = _data.joint_poses[i-1] * _pjoints[i]->derivative(_data.joint_positions[i]) 
+    //                                             * _data.joint_poses[i].conj() * _data.joint_poses.back();
+    //     }
+    //     _data.joint_pose_derivatives.back() = _data.joint_poses[DOF-2] * _pjoints.back()->derivative(_data.joint_positions.back()) * _data.effector;
+    // }
+    // }
 };
 
 } // namespace kinematics
