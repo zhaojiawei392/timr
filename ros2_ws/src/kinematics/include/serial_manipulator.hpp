@@ -30,7 +30,7 @@ namespace timr {
 namespace kinematics {
 
 using scalar_t = double;
-using dof_size_t = uint8_t;
+using dof_size_t = unsigned int;
 constexpr scalar_t deg2rad_factor = M_PI / 180.;
 constexpr scalar_t rad2deg_factor = 180. / M_PI;
 
@@ -182,7 +182,12 @@ struct SerialManipulatorConfig {
     scalar_t pos_gain{1.0};
     scalar_t vel_gain{1.0};
     dof_size_t DOF{0};
+    std::string name;
+    std::string api_version;
+    std::string kind;
+    uint8_t flag{0};
     bool is_open_loop{false};
+    bool is_initialized{false};
 };
 
 struct SerialManipulatorData {
@@ -206,13 +211,66 @@ struct SerialManipulatorData {
     std::vector<DualQuat<scalar_t>> joint_pose_derivative; // {joint1->joint2, joint2->joint3, joint3->joint4, ... , joint?->end}
 };
 
+class Solver {
+private:
+    qpOASES::SQProblem qp;
+    qpOASES::Options options;
+    int nWSR{500};
+    bool first_time{true};
+    size_t problem_size{0};
+
+public:
+    Solver() = default;
+    ~Solver() = default;
+
+    void initialize(size_t size) {
+        problem_size = size;
+        qp = qpOASES::SQProblem(size, size); // Initialize with proper dimensions
+        options.printLevel = qpOASES::PL_LOW;
+        qp.setOptions(options);
+        first_time = true;
+    }
+
+    std::vector<double> solve(const double* H_raw, const double* g_raw, 
+                            const double* A_raw, const double* lb_raw, 
+                            const double* ub_raw, const double* lb_A_raw, 
+                            const double* ub_A_raw) {
+        if (problem_size == 0) {
+            throw std::runtime_error("Solver not initialized with proper dimensions");
+        }
+
+        auto nWSR_in_use = nWSR;
+        qpOASES::returnValue status;
+
+        if (first_time) {
+            status = qp.init(H_raw, g_raw, A_raw, lb_raw, ub_raw, 
+                           lb_A_raw, ub_A_raw, nWSR_in_use);
+            first_time = false;
+        } else {
+            status = qp.hotstart(H_raw, g_raw, A_raw, lb_raw, ub_raw, 
+                               lb_A_raw, ub_A_raw, nWSR_in_use);
+        }
+
+        if (status != qpOASES::SUCCESSFUL_RETURN) {
+            throw std::runtime_error("Failed to solve QP problem");
+        }
+
+        std::vector<double> xOpt(problem_size);
+        qp.getPrimalSolution(xOpt.data());
+        return xOpt;
+    }
+
+    void reset() {
+        first_time = true;
+    }
+};
+
 class SerialManipulator {
 protected:
     SerialManipulatorData _data;
     std::vector<std::unique_ptr<Joint>> _pjoints;
     SerialManipulatorConfig _cfg;
-    uint8_t _flag{0};
-    bool _is_initialized{false};
+    Solver _solver;
 public:
     SerialManipulator() = delete;
     ~SerialManipulator() = default;
@@ -235,9 +293,14 @@ public:
         } catch (const YAML::Exception& e) {
             throw std::runtime_error("Failed to load YAML file: " + std::string(e.what()));
         }
-        const auto& spec = yaml["spec"];
+
         try {
+            _cfg.api_version = yaml["apiVersion"].as<std::string>();
+            _cfg.name = yaml["metadata"]["name"].as<std::string>();
+            _cfg.kind = yaml["kind"].as<std::string>();
+            const auto& spec = yaml["spec"];
             _cfg.DOF = spec["DOF"].as<dof_size_t>();
+
             auto theta = spec["dhParams"]["theta"].as<std::vector<scalar_t>>();
             if (theta.size() != _cfg.DOF) {
                 throw std::runtime_error("SerialManipulator yaml spec.dhParams.theta.size() != spec.DOF");
@@ -292,8 +355,6 @@ public:
                 _data.joint_position_upper_bound[i] *= deg2rad_factor;
                 _data.joint_velocity_lower_bound[i] *= deg2rad_factor;
                 _data.joint_velocity_upper_bound[i] *= deg2rad_factor;
-                _data.joint_effort_lower_bound[i] *= deg2rad_factor;
-                _data.joint_effort_upper_bound[i] *= deg2rad_factor;
             }
 
             // Configure solver parameters
@@ -330,7 +391,7 @@ public:
     }
 
     int update(const Pose<scalar_t>& desired_pose) {
-        if (_flag != 7) {
+        if (_cfg.flag != 7) {
             return -1;
         }
         // SOLVE QP PROBLEM
@@ -398,31 +459,8 @@ public:
         const double* lb_raw = lower_bound.data();
         const double* ub_raw = upper_bound.data();
 
-        static SQProblem qp(_cfg.DOF, _cfg.DOF);
-        static Options options;
-        static int_t nWSR = 500;
-        // Initialize QP problem
-        bool first_time(true);
-        if (first_time){
-            options.printLevel = PL_LOW;
-            qp.setOptions(options);
-            auto nWSR_in_use = nWSR;
-            returnValue status = qp.init(H_raw, g_raw, A_raw, lb_raw, ub_raw, lb_A_raw, ub_A_raw, nWSR_in_use); 
-            if (status != SUCCESSFUL_RETURN){
-                throw std::runtime_error("Failed to solve QP problem.\n");
-            }
-            first_time = false;
-        }else{
-            auto nWSR_in_use = nWSR;
-            returnValue status = qp.hotstart(H_raw, g_raw, A_raw, lb_raw, ub_raw, lb_A_raw, ub_A_raw, nWSR_in_use);
-            if (status != SUCCESSFUL_RETURN){
-                throw std::runtime_error("Failed to solve QP problem.\n");
-            }
-        }
-        // GET SOLUTION
-        std::vector<double> xOpt(_cfg.DOF);
-        qp.getPrimalSolution(xOpt.data());
-        
+        std::vector<double> xOpt = _solver.solve(H_raw, g_raw, A_raw, lb_raw, ub_raw, lb_A_raw, ub_A_raw);
+
         // UPDATE JOINT POSITIONS, VELOCITIES, AND ACCELERATIONS
         for (dof_size_t i=0; i<_cfg.DOF; ++i) {
             // Update target velocity to QP solution
@@ -446,17 +484,18 @@ public:
                 _data.joint_position_lower_bound[i], _data.joint_position_upper_bound[i]);
         }
         // RESET UPDATE CHECKLIST
-        _flag = 0;
+        _cfg.flag = 0;
         return 0;
     }
 
     inline void initialize(const std::vector<scalar_t>& joint_position) {
         if (joint_position.size() != _cfg.DOF) {
-            throw std::runtime_error("SerialManipulator::initialize() joint_position size != _cfg.DOF");
+            throw std::runtime_error("SerialManipulator::initialize() joint_position size != DOF");
         }
-        if (!_is_initialized) {
+        if (!_cfg.is_initialized) {
             set_joint_position(_data.joint_position);
-            _is_initialized = true;
+            _solver.initialize(_cfg.DOF);
+            _cfg.is_initialized = true;
         }
     }
 
@@ -471,7 +510,7 @@ public:
         }
         _data.joint_position = joint_position;
         _update_forward_kinematics();
-        _flag |= 1;
+        _cfg.flag |= 1;
         return 0;
     }
     inline int set_joint_velocity(const std::vector<scalar_t>& joint_velocity) noexcept {
@@ -479,7 +518,7 @@ public:
             return -1;
         }
         _data.joint_velocity = joint_velocity;
-        _flag |= 2;
+        _cfg.flag |= 2;
         return 0;
     }
     inline int set_joint_effort(const std::vector<scalar_t>& joint_effort) noexcept {
@@ -487,7 +526,7 @@ public:
             return -1;
         }
         _data.joint_effort = joint_effort;
-        _flag |= 4;
+        _cfg.flag |= 4;
         return 0;
     }
 
@@ -508,18 +547,29 @@ public:
     inline dof_size_t                get_dof() const noexcept {return _cfg.DOF;}
     inline SerialManipulatorConfig   get_config() const noexcept {return _cfg;}
     inline SerialManipulatorData   get_data() const noexcept {return _data;}
-    inline bool is_initialized() const noexcept {return _is_initialized;}
+    inline std::string get_name() const noexcept {return _cfg.name;}
+    inline std::string get_api_version() const noexcept {return _cfg.api_version;}
+    inline std::string get_kind() const noexcept {return _cfg.kind;}
+    inline bool is_initialized() const noexcept {return _cfg.is_initialized;}
 private:
-    void _update_forward_kinematics() noexcept {        
+    void _update_forward_kinematics() noexcept {     
+        if (_cfg.DOF == 0) return;
+        if (_cfg.DOF == 1) {
+            _data.joint_pose.front() = _data.base * _pjoints.front()->fkm(_data.joint_position.front()) * _data.effector;
+            _data.joint_pose_derivative.front() = _data.base * _pjoints.front()->derivative(_data.joint_position.front()) 
+                                                    * _data.joint_pose.front().conj() * _data.joint_pose.back() * _data.effector;
+            return;
+        }
         // UPDATE FORWARD KINEMATICS
         _data.joint_pose.front() = _data.base * _pjoints.front()->fkm(_data.joint_position.front());
+        _data.joint_pose_derivative.front() = _data.base * _pjoints.front()->derivative(_data.joint_position.front()) 
+                                                * _data.joint_pose.front().conj() * _data.joint_pose.back();
+
         for (dof_size_t i=1; i<_cfg.DOF-1; ++i) {
             _data.joint_pose[i] = _data.joint_pose[i-1] * _pjoints[i]->fkm(_data.joint_position[i]);
         }
         _data.joint_pose.back() = _data.joint_pose[_cfg.DOF-2] * _pjoints.back()->fkm(_data.joint_position.back()) * _data.effector;
 
-        _data.joint_pose_derivative.front() = _data.base * _pjoints.front()->derivative(_data.joint_position.front()) 
-                                                * _data.joint_pose.front().conj() * _data.joint_pose.back();
         for (dof_size_t i=1; i<_cfg.DOF-1; ++i){
             _data.joint_pose_derivative[i] = _data.joint_pose[i-1] * _pjoints[i]->derivative(_data.joint_position[i]) 
                                                 * _data.joint_pose[i].conj() * _data.joint_pose.back();

@@ -14,7 +14,6 @@ find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(timr_msgs REQUIRED)
-find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_gtest REQUIRED)
 
 add_executable(driver_node src/driver_node.cpp)

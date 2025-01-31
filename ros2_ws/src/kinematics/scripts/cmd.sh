@@ -47,4 +47,4 @@ sudo ip link set can0 type can bitrate 1000000
 sudo ip link set can0 up
 
 # Run tests
-colcon test --packages-select driver --event-handlers console_direct+
+colcon test --packages-select kinematics --event-handlers console_direct+

@@ -1,7 +1,7 @@
-apiVersion: serialmanipulator.timr.com/v1alpha1
+apiVersion: serialmanipulator.timr.io/v1alpha1
 metadata:
-  name: robot
-  description: Robot description
+  name: robot1
+  description: "Robot description"
 kind: SerialManipulator
 spec:
   DOF: 6
@@ -23,5 +23,5 @@ spec:
     velGain: 1.0
     translationPriority: 1
     errorGain: 50
-    jointDamping: 0.0001
-    isOpenLoop: true
+    jointDamping: 0.0001 
+    isOpenLoop: false
