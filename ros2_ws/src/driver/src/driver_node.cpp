@@ -43,11 +43,12 @@ private:
             // Get current joint positions and velocities with safety checks
             const auto& positions = _driver->get_joint_positions();
             const auto& velocities = _driver->get_joint_velocities();
+            const auto& efforts = _driver->get_joint_efforts();
 
             // Copy directly into existing vectors
             std::copy(positions.begin(), positions.end(), _cached_joint_state_msg.position.begin());
             std::copy(velocities.begin(), velocities.end(), _cached_joint_state_msg.velocity.begin());
-            
+            std::copy(efforts.begin(), efforts.end(), _cached_joint_state_msg.effort.begin());
             _pub_joint_state->publish(_cached_joint_state_msg);
         } catch (const std::exception& e) {
             RCLCPP_ERROR(get_logger(), "Error in publishing joint states: %s", e.what());

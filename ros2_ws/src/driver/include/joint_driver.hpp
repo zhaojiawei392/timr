@@ -471,6 +471,10 @@ public:
         };
     }
 
+    inline scalar_t read_realtime_effort() {
+        return 1.0;
+    }
+        
     inline scalar_t read_realtime_velocity() {
         // Command format: [addr][0x35][checksum]
         std::array<uint8_t, 3> code = {

@@ -1,5 +1,5 @@
 # Initialize joint states
-ros2 topic pub /joint_state sensor_msgs/msg/JointState "{
+ros2 topic pub -r 250 /joint_state sensor_msgs/msg/JointState "{
   header: {
     stamp: {sec: 0}, 
     frame_id: 'base_link'
@@ -11,7 +11,7 @@ ros2 topic pub /joint_state sensor_msgs/msg/JointState "{
 }"
 
 # Publish target pose
-ros2 topic pub -r 100 /target_pose geometry_msgs/msg/Pose "{
+ros2 topic pub -r 250 /target_pose geometry_msgs/msg/Pose "{
   position: {
     x: 0.2,
     y: 0.0,
@@ -26,13 +26,13 @@ ros2 topic pub -r 100 /target_pose geometry_msgs/msg/Pose "{
 }"
 
 # Set target joint states
-ros2 topic pub -r 100 /target_joint_state sensor_msgs/msg/JointState "{
+ros2 topic pub -r 250 /target_joint_state sensor_msgs/msg/JointState "{
   header: {
     stamp: {sec: 0},
     frame_id: 'base_link'
   },
   name: ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6'],
-  position: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+  position: [0, 0, 0, 0, 0, 0],
   velocity: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
   effort: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 }"

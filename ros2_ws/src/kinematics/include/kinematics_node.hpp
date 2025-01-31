@@ -35,12 +35,15 @@ protected:
         if (!_kinematics->is_initialized()) {
             return;
         }
+        if (!_pub_target_joint_state) {
+            return;
+        }
         try {
             const dqpose::Translation<scalar_t> target_translation(msg->position.x, msg->position.y, msg->position.z);
             const dqpose::Rotation<scalar_t> target_rotation(msg->orientation.w, msg->orientation.x, msg->orientation.y, msg->orientation.z);
             const dqpose::Pose<scalar_t> target_pose(target_rotation, target_translation);
+
             if (_kinematics->update(target_pose) != 0) {
-                RCLCPP_ERROR(this->get_logger(), "Failed to update kinematics");
                 return;
             }
             _cached_target_joint_state_msg.position = _kinematics->get_target_joint_position();
@@ -58,11 +61,22 @@ protected:
         if (!_kinematics->is_initialized()) {
             _kinematics->initialize(msg->position);
         }
+        if (!_pub_pose) {
+            return;
+        }
         try {   
-            if (
-                _kinematics->set_joint_position(msg->position) != 0
-            ) {
-                RCLCPP_ERROR(this->get_logger(), "Failed to set joint state");
+            if (_kinematics->set_joint_position(msg->position) != 0) {
+                RCLCPP_ERROR(this->get_logger(), "Failed to set joint position");
+                return;
+            }
+
+            if (_kinematics->set_joint_velocity(msg->velocity) != 0) {
+                RCLCPP_ERROR(this->get_logger(), "Failed to set joint velocity");
+                return;
+            }
+
+            if (_kinematics->set_joint_effort(msg->effort) != 0) {
+                RCLCPP_ERROR(this->get_logger(), "Failed to set joint effort");
                 return;
             }
 
@@ -144,7 +158,14 @@ public:
                 rclcpp::spin_some(shared_from_this());
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }    
-
+            RCLCPP_INFO(this->get_logger(), "First joint state message received");
+            
+            const auto& current_pose = _kinematics->get_end_pose();
+            const auto& current_translation = current_pose.translation();
+            const auto& current_rotation = current_pose.rotation();
+            RCLCPP_INFO(this->get_logger(), "Current pose: %f, %f, %f", current_translation.x(), current_translation.y(), current_translation.z());
+            RCLCPP_INFO(this->get_logger(), "Current rotation: %f, %f, %f, %f", current_rotation.w(), current_rotation.x(), current_rotation.y(), current_rotation.z());
+            RCLCPP_INFO(this->get_logger(), "Current translation: %f, %f, %f", current_translation.x(), current_translation.y(), current_translation.z());
             if (kill_this_node) {
                 RCLCPP_INFO(this->get_logger(), "Received interrupt, shutting down...");
                 return false;
@@ -171,6 +192,8 @@ public:
         }
         
         RCLCPP_INFO(this->get_logger(), "Kinematics node initialized");
+
+        
         return true;
     }
 

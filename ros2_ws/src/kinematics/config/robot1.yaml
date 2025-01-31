@@ -19,9 +19,9 @@ spec:
     effortLowerBound: [0, 0, 0, 0, 0, 0]
     effortUpperBound: [1, 1, 1, 1, 1, 1]
   solverConfig:
-    posGain: 1.0
-    velGain: 1.0
+    posGain: 1
+    velGain: 100
     translationPriority: 1
     errorGain: 50
     jointDamping: 0.0001 
-    isOpenLoop: false
+    isOpenLoop: true

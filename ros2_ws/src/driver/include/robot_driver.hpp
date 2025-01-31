@@ -107,7 +107,13 @@ public:
         }
         return velocities; 
     } 
-                            
+    inline const std::array<scalar_t, DOF> get_joint_efforts() noexcept { 
+        std::array<scalar_t, DOF> efforts;
+        for (dof_size_t i = 0; i < DOF; ++i) {
+            efforts[i] = _joints[i]->read_realtime_effort();
+        }
+        return efforts; 
+    }
 protected:
     int _can_socket;
     Config _config;

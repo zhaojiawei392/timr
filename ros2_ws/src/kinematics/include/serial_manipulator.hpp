@@ -391,11 +391,10 @@ public:
     }
 
     int update(const Pose<scalar_t>& desired_pose) {
-        if (_cfg.flag != 7) {
+        if (_cfg.flag != 0x07) {
             return -1;
         }
         // SOLVE QP PROBLEM
-        USING_NAMESPACE_QPOASES;
         const Rotation<scalar_t>& r_end = _data.joint_pose.back().rotation();
         const Translation<scalar_t>& t_end = _data.joint_pose.back().translation();
         const Rotation<scalar_t>& rd = desired_pose.rotation();
@@ -424,6 +423,7 @@ public:
 
         const Quat<scalar_t> t_err = t_end - td;
         const Quat<scalar_t> r_rd_err = __closest_invariant_rotation_error(r_end, rd);
+
         // Initialize a zero vector
         std::vector<double> g(_cfg.DOF);
         for (dof_size_t i=0; i<_cfg.DOF; ++i) {
@@ -467,17 +467,18 @@ public:
             _data.target_joint_velocity[i] = std::clamp(xOpt[i] * _cfg.vel_gain, 
                 _data.joint_velocity_lower_bound[i], _data.joint_velocity_upper_bound[i]);
 
-            // Calculate velocity gap between QP solution and current target velocity
-            scalar_t vel_gap = std::abs(xOpt[i] - _data.target_joint_velocity[i]);
+            // // Calculate velocity gap between QP solution and current target velocity
+            // scalar_t vel_gap = std::abs(xOpt[i] - _data.target_joint_velocity[i]);
             
-            // Calculate effort scaling factor:
-            // - For small velocity changes (< 1e-6), use factor of 1.0
-            // - For larger changes, scale inversely with velocity gap to smooth effort
-            scalar_t acc_factor = vel_gap > 1e-6 ? 1.0 / vel_gap : 1.0;
+            // // Calculate effort scaling factor:
+            // // - For small velocity changes (< 1e-6), use factor of 1.0
+            // // - For larger changes, scale inversely with velocity gap to smooth effort
+            // scalar_t acc_factor = vel_gap > 1e-6 ? 1.0 / vel_gap : 1.0;
             
-            // Clamp effort between 0 and 1 to limit maximum effort
-            _data.target_joint_effort[i] = std::clamp(acc_factor, 
-                _data.joint_effort_lower_bound[i], _data.joint_effort_upper_bound[i]);
+            // // Clamp effort between 0 and 1 to limit maximum effort
+            // _data.target_joint_effort[i] = std::clamp(acc_factor, 
+            //     _data.joint_effort_lower_bound[i], _data.joint_effort_upper_bound[i]);
+            _data.target_joint_effort[i] = 1;
             
             // Update target position using velocity * time;
             _data.target_joint_position[i] = std::clamp(xOpt[i] * _cfg.pos_gain, 
@@ -493,7 +494,8 @@ public:
             throw std::runtime_error("SerialManipulator::initialize() joint_position size != DOF");
         }
         if (!_cfg.is_initialized) {
-            set_joint_position(_data.joint_position);
+            _data.joint_position = joint_position;
+            _update_forward_kinematics(joint_position);
             _solver.initialize(_cfg.DOF);
             _cfg.is_initialized = true;
         }
@@ -509,8 +511,12 @@ public:
             return -1;
         }
         _data.joint_position = joint_position;
-        _update_forward_kinematics();
-        _cfg.flag |= 1;
+        if (_cfg.is_open_loop) {
+            _update_forward_kinematics(_data.target_joint_position);
+        }else {
+            _update_forward_kinematics(joint_position);
+        }
+        _cfg.flag |= 0x01;
         return 0;
     }
     inline int set_joint_velocity(const std::vector<scalar_t>& joint_velocity) noexcept {
@@ -518,7 +524,12 @@ public:
             return -1;
         }
         _data.joint_velocity = joint_velocity;
-        _cfg.flag |= 2;
+        if (_cfg.is_open_loop) {
+            _update_forward_kinematics(_data.target_joint_velocity);
+        }else {
+            _update_forward_kinematics(joint_velocity);
+        }
+        _cfg.flag |= 0x02;
         return 0;
     }
     inline int set_joint_effort(const std::vector<scalar_t>& joint_effort) noexcept {
@@ -526,7 +537,12 @@ public:
             return -1;
         }
         _data.joint_effort = joint_effort;
-        _cfg.flag |= 4;
+        if (_cfg.is_open_loop) {
+            _update_forward_kinematics(_data.target_joint_effort);
+        }else {
+            _update_forward_kinematics(joint_effort);
+        }
+        _cfg.flag |= 0x04;
         return 0;
     }
 
@@ -552,29 +568,39 @@ public:
     inline std::string get_kind() const noexcept {return _cfg.kind;}
     inline bool is_initialized() const noexcept {return _cfg.is_initialized;}
 private:
-    void _update_forward_kinematics() noexcept {     
+    void _update_forward_kinematics(const std::vector<scalar_t>& joint_position) {   
+        if (joint_position.size() != _cfg.DOF) {
+            throw std::runtime_error("SerialManipulator::_update_forward_kinematics() joint_position size != DOF");
+        }
         if (_cfg.DOF == 0) return;
         if (_cfg.DOF == 1) {
-            _data.joint_pose.front() = _data.base * _pjoints.front()->fkm(_data.joint_position.front()) * _data.effector;
-            _data.joint_pose_derivative.front() = _data.base * _pjoints.front()->derivative(_data.joint_position.front()) 
+            _data.joint_pose.front() = _data.base * _pjoints.front()->fkm(joint_position.front()) * _data.effector;
+            _data.joint_pose_derivative.front() = _data.base * _pjoints.front()->derivative(joint_position.front()) 
                                                     * _data.joint_pose.front().conj() * _data.joint_pose.back() * _data.effector;
             return;
         }
+        if (_cfg.DOF == 2) {
+            _data.joint_pose.front() = _data.base * _pjoints.front()->fkm(joint_position.front());
+            _data.joint_pose_derivative.front() = _data.base * _pjoints.front()->derivative(joint_position.front()) 
+                                                    * _data.joint_pose.front().conj() * _data.joint_pose.back();
+            _data.joint_pose.back() = _data.joint_pose.front() * _pjoints.back()->fkm(joint_position.back()) * _data.effector;
+            _data.joint_pose_derivative.back() = _data.joint_pose.front() * _pjoints.back()->derivative(joint_position.back()) * _data.effector;
+            return;
+        }
         // UPDATE FORWARD KINEMATICS
-        _data.joint_pose.front() = _data.base * _pjoints.front()->fkm(_data.joint_position.front());
-        _data.joint_pose_derivative.front() = _data.base * _pjoints.front()->derivative(_data.joint_position.front()) 
+        _data.joint_pose.front() = _data.base * _pjoints.front()->fkm(joint_position.front());
+        _data.joint_pose_derivative.front() = _data.base * _pjoints.front()->derivative(joint_position.front()) 
                                                 * _data.joint_pose.front().conj() * _data.joint_pose.back();
 
         for (dof_size_t i=1; i<_cfg.DOF-1; ++i) {
-            _data.joint_pose[i] = _data.joint_pose[i-1] * _pjoints[i]->fkm(_data.joint_position[i]);
+            _data.joint_pose[i] = _data.joint_pose[i-1] * _pjoints[i]->fkm(joint_position[i]);
         }
-        _data.joint_pose.back() = _data.joint_pose[_cfg.DOF-2] * _pjoints.back()->fkm(_data.joint_position.back()) * _data.effector;
+        _data.joint_pose.back() = _data.joint_pose[_cfg.DOF-2] * _pjoints.back()->fkm(joint_position.back()) * _data.effector;
 
         for (dof_size_t i=1; i<_cfg.DOF-1; ++i){
-            _data.joint_pose_derivative[i] = _data.joint_pose[i-1] * _pjoints[i]->derivative(_data.joint_position[i]) 
+            _data.joint_pose_derivative[i] = _data.joint_pose[i-1] * _pjoints[i]->derivative(joint_position[i]) 
                                                 * _data.joint_pose[i].conj() * _data.joint_pose.back();
         }
-        _data.joint_pose_derivative.back() = _data.joint_pose[_cfg.DOF-2] * _pjoints.back()->derivative(_data.joint_position.back()) * _data.effector;
     }
 };
 
