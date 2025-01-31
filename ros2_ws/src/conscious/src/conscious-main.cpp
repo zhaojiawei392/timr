@@ -81,7 +81,7 @@ public:
         RCLCPP_INFO(this->get_logger(), "Initializing conscious node...");
         // Initialize subscriber for poses
         _sub_poses = this->create_subscription<geometry_msgs::msg::Pose>(
-            "poses", 10,
+            "pose", 10,
             std::bind(&ConsciousNode::_callback_poses, this, std::placeholders::_1));
         while (!_initialized && !kill_this_node) {
             rclcpp::spin_some(shared_from_this());

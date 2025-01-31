@@ -43,6 +43,7 @@ ros2 topic echo /joint_state
 
 # CAN bus setup
 sudo slcand -o -c -s8 /dev/ttyACM0 can0
+sudo ip link set can0 down
 sudo ip link set can0 type can bitrate 1000000
 sudo ip link set can0 up
 

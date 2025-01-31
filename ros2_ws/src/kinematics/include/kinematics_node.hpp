@@ -130,7 +130,7 @@ public:
             }
             
             _sub_joint_state = this->create_subscription<sensor_msgs::msg::JointState>(
-                "/joint_state", 10,
+                "joint_state", 10,
                 std::bind(&KinematicsNode::_callback_joint_state, this, std::placeholders::_1));
 
             RCLCPP_INFO(this->get_logger(), "Waiting for the first joint state message...");
@@ -152,14 +152,14 @@ public:
 
             // Create remaining subscriptions and publishers
             _sub_target_pose = this->create_subscription<geometry_msgs::msg::Pose>(
-                "/target_pose", 10,
+                "target_pose", 10,
                 std::bind(&KinematicsNode::_callback_target_pose, this, std::placeholders::_1));
 
             _pub_target_joint_state = this->create_publisher<sensor_msgs::msg::JointState>(
-                "/target_joint_state", 10);
+                "target_joint_state", 10);
 
             _pub_pose = this->create_publisher<geometry_msgs::msg::Pose>(
-                "/pose", 10);
+                "pose", 10);
 
             _timer = this->create_wall_timer(
                 std::chrono::duration_cast<std::chrono::seconds>(std::chrono::duration<double>(sampling_time_sec)),

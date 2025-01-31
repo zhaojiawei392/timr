@@ -116,11 +116,11 @@ public:
 
             // Create publisher for current joint states
             _pub_joint_state = create_publisher<sensor_msgs::msg::JointState>(
-                "/joint_state", 10);
+                "joint_state", 10);
 
             // Create subscriber for target joint states
             _sub_target_joint_state = create_subscription<sensor_msgs::msg::JointState>(
-                "/target_joint_state", 10,
+                "target_joint_state", 10,
                 std::bind(&DriverNode::_callback_target_joint_states, this, std::placeholders::_1));
 
             // Create timer for publishing current joint states
