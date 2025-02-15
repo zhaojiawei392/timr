@@ -8,7 +8,7 @@
 
 volatile sig_atomic_t kill_this_node = 0;
 
-void signal_handler(int signum) {
+void signal_handler([[maybe_unused]] int signum) {
     kill_this_node = 1;
 }
 
@@ -20,7 +20,7 @@ private:
     std::unique_ptr<kinematics::SerialManipulator> _serialmanipulator_kinematics;
     rclcpp::Subscription<geometry_msgs::msg::Pose>::SharedPtr _sub_target_pose;
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr _sub_joint_states;
-    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr _pub_target_joint_positions;
+    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr _pub_target_joint_position;
     rclcpp::Publisher<geometry_msgs::msg::Pose>::SharedPtr _pub_current_pose;
     sensor_msgs::msg::JointState _cached_target_joint_state_msg;
     geometry_msgs::msg::Pose _cached_current_pose_msg;
@@ -39,23 +39,23 @@ private:
         _serialmanipulator_kinematics->update(target_pose);
     }
 
-    void _callback_joint_positions(const sensor_msgs::msg::JointState::SharedPtr msg)
+    void _callback_joint_position(const sensor_msgs::msg::JointState::SharedPtr msg)
     {
-        std::array<scalar_t, DOF> joint_positions;
-        std::array<scalar_t, DOF> joint_velocities;
-        std::array<scalar_t, DOF> joint_accelerations;
+        std::array<scalar_t, DOF> joint_position;
+        std::array<scalar_t, DOF> joint_velocity;
+        std::array<scalar_t, DOF> joint_effort;
         for (dof_size_t i = 0; i < DOF; ++i) {
-            joint_positions[i] = msg->position[i];
-            joint_velocities[i] = msg->velocity[i];
-            joint_accelerations[i] = msg->effort[i];
+            joint_position[i] = msg->position[i];
+            joint_velocity[i] = msg->velocity[i];
+            joint_effort[i] = msg->effort[i];
         }   
 
         if (!_serialmanipulator_kinematics) {
-            _serialmanipulator_kinematics = std::make_unique<kinematics::SerialManipulator>(_robot_description_path, joint_positions);
+            _serialmanipulator_kinematics = std::make_unique<kinematics::SerialManipulator>(_robot_description_path, joint_position);
         }
-        _serialmanipulator_kinematics->set_joint_positions(joint_positions);
-        _serialmanipulator_kinematics->set_joint_velocities(joint_velocities);
-        _serialmanipulator_kinematics->set_joint_accelerations(joint_accelerations);
+        _serialmanipulator_kinematics->set_joint_position(joint_position);
+        _serialmanipulator_kinematics->set_joint_velocity(joint_velocity);
+        _serialmanipulator_kinematics->set_joint_effort(joint_effort);
     }
 
     void _callback_timer()
@@ -69,17 +69,17 @@ private:
         _cached_target_joint_state_msg.header.stamp = this->now();
         
         try {
-            // Set joint positions with safety checks
-            const auto& positions = _serialmanipulator_kinematics->get_target_joint_positions();
-            const auto& velocities = _serialmanipulator_kinematics->get_target_joint_velocities();
-            const auto& accelerations = _serialmanipulator_kinematics->get_target_joint_accelerations();
+            // Set joint position with safety checks
+            const auto& position = _serialmanipulator_kinematics->get_target_joint_position();
+            const auto& velocity = _serialmanipulator_kinematics->get_target_joint_velocity();
+            const auto& effort = _serialmanipulator_kinematics->get_target_joint_effort();
 
-            _cached_target_joint_state_msg.position.assign(positions.begin(), positions.end());
-            _cached_target_joint_state_msg.velocity.assign(velocities.begin(), velocities.end());
-            _cached_target_joint_state_msg.effort.assign(accelerations.begin(), accelerations.end());
+            _cached_target_joint_state_msg.position.assign(position.begin(), position.end());
+            _cached_target_joint_state_msg.velocity.assign(velocity.begin(), velocity.end());
+            _cached_target_joint_state_msg.effort.assign(effort.begin(), effort.end());
 
             // Publish the message
-            _pub_target_joint_positions->publish(_cached_target_joint_state_msg);
+            _pub_target_joint_position->publish(_cached_target_joint_state_msg);
 
             // Add end pose publishing
             const auto& current_pose = _serialmanipulator_kinematics->get_end_pose();
@@ -109,8 +109,8 @@ public:
         // Create subscriptions
         RCLCPP_INFO(this->get_logger(), "Starting kinematics node initialization...");
         _sub_joint_states = this->create_subscription<sensor_msgs::msg::JointState>(
-            "joint_states", 10,
-            std::bind(&KinematicsNode::_callback_joint_positions, this, std::placeholders::_1));
+            "joint_state", 10,
+            std::bind(&KinematicsNode::_callback_joint_position, this, std::placeholders::_1));
 
         RCLCPP_INFO(this->get_logger(), "Waiting for the first joint states message...");
         while (!_serialmanipulator_kinematics && !kill_this_node) {
@@ -124,14 +124,14 @@ public:
         
         // Create remaining subscriptions and publishers
         _sub_target_pose = this->create_subscription<geometry_msgs::msg::Pose>(
-            "target_poses", 10,
+            "target_pose", 10,
             std::bind(&KinematicsNode::_callback_target_pose, this, std::placeholders::_1));
 
-        _pub_target_joint_positions = this->create_publisher<sensor_msgs::msg::JointState>(
-            "target_joint_states", 10);
+        _pub_target_joint_position = this->create_publisher<sensor_msgs::msg::JointState>(
+            "target_joint_state", 10);
 
         _pub_current_pose = this->create_publisher<geometry_msgs::msg::Pose>(
-            "poses", 10);
+            "pose", 10);
 
         // Set joint names (adjust these to match your robot's joint names)
         for (int i=0; i<DOF; ++i) {

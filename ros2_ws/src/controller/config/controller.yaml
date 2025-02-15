@@ -1,0 +1,7 @@
+port: /dev/ttyACM1
+baud_rate: 115200
+filter_alpha: 0.2
+sampling_time_sec: 0.004
+pos_gain: 1.0
+vel_gain: 10
+effort: 0

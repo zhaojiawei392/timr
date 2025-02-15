@@ -16,9 +16,9 @@
  */
 
 #pragma once
-#include "qpOASES.hpp"
 #include "dqpose.hpp"
-#include "nlohmann/json.hpp"
+#include <qpOASES.hpp>
+#include <nlohmann/json.hpp>
 #include <memory>
 #include <vector>
 #include <array>
@@ -141,7 +141,7 @@ public:
             0.5 * ( cos_theta * d_ * cos_alpha - sin_theta * a_ * sin_alpha )
         );
     }
-    virtual inline DualQuat<scalar_t> derivative(const scalar_t position) const noexcept override {
+    virtual inline DualQuat<scalar_t> derivative([[maybe_unused]] const scalar_t position) const noexcept override {
         scalar_t cos_theta = sin(0.5 * theta());
         scalar_t sin_theta = cos(0.5 * theta());
         scalar_t cos_alpha = cos(0.5 * alpha());
@@ -182,19 +182,19 @@ struct SerialManipulatorConfig {
 struct SerialManipulatorData {
     Pose<scalar_t> base;
     Pose<scalar_t> effector;
-    std::array<scalar_t, DOF> target_joint_positions{};
-    std::array<scalar_t, DOF> target_joint_velocities{};
-    std::array<scalar_t, DOF> target_joint_accelerations{};
-    std::array<scalar_t, DOF> joint_positions{};
-    std::array<scalar_t, DOF> joint_velocities{};
-    std::array<scalar_t, DOF> joint_accelerations{};
+    std::array<scalar_t, DOF> target_joint_position{};
+    std::array<scalar_t, DOF> target_joint_velocity{};
+    std::array<scalar_t, DOF> target_joint_effort{};
+    std::array<scalar_t, DOF> joint_position{};
+    std::array<scalar_t, DOF> joint_velocity{};
+    std::array<scalar_t, DOF> joint_effort{};
 
-    std::array<scalar_t, DOF> joint_positions_limit_lower{};
-    std::array<scalar_t, DOF> joint_positions_limit_upper{};
-    std::array<scalar_t, DOF> joint_velocities_limit_lower{};
-    std::array<scalar_t, DOF> joint_velocities_limit_upper{};
-    std::array<scalar_t, DOF> joint_accelerations_limit_lower{};
-    std::array<scalar_t, DOF> joint_accelerations_limit_upper{};
+    std::array<scalar_t, DOF> joint_position_limit_lower{};
+    std::array<scalar_t, DOF> joint_position_limit_upper{};
+    std::array<scalar_t, DOF> joint_velocity_limit_lower{};
+    std::array<scalar_t, DOF> joint_velocity_limit_upper{};
+    std::array<scalar_t, DOF> joint_effort_limit_lower{};
+    std::array<scalar_t, DOF> joint_effort_limit_upper{};
 
     std::array<Pose<scalar_t>, DOF> joint_poses; // {joint1->joint2, joint2->joint3, joint3->joint4, ... , joint?->end}
     std::array<DualQuat<scalar_t>, DOF> joint_pose_derivatives; // {joint1->joint2, joint2->joint3, joint3->joint4, ... , joint?->end}
@@ -209,7 +209,7 @@ protected:
 
     void _construct(const std::array<std::array<scalar_t, DOF>, 5>& dhparams, 
                         const std::array<std::array<scalar_t, DOF>, 6>& limits, 
-                        const std::array<scalar_t, DOF>& joint_positions)
+                        const std::array<scalar_t, DOF>& joint_position)
     {
         // Initialize joints
         for (dof_size_t i=0; i<DOF; ++i){
@@ -224,16 +224,16 @@ protected:
             }
         }
 
-        _data.joint_positions_limit_lower = limits[0];
-        _data.joint_positions_limit_upper = limits[1];
-        _data.joint_velocities_limit_lower = limits[2];
-        _data.joint_velocities_limit_upper = limits[3];
-        _data.joint_accelerations_limit_lower = limits[4];
-        _data.joint_accelerations_limit_upper = limits[5];
-        _data.joint_positions = joint_positions;
+        _data.joint_position_limit_lower = limits[0];
+        _data.joint_position_limit_upper = limits[1];
+        _data.joint_velocity_limit_lower = limits[2];
+        _data.joint_velocity_limit_upper = limits[3];
+        _data.joint_effort_limit_lower = limits[4];
+        _data.joint_effort_limit_upper = limits[5];
+        _data.joint_position = joint_position;
         _update_kinematics();
 
-        std::cout << "Constructed a " + std::to_string(joint_positions.size()) + "-DoF timr::SerialManipulator.\n" ;
+        std::cout << "Constructed a " + std::to_string(joint_position.size()) + "-DoF timr::SerialManipulator.\n" ;
     }
 public:
     SerialManipulator() = delete;
@@ -243,7 +243,7 @@ public:
     SerialManipulator& operator=(const SerialManipulator& other) = default;
     SerialManipulator& operator=(SerialManipulator&& other) = default;
 
-    explicit SerialManipulator(const std::string& json_path, const std::array<scalar_t, DOF>& joint_positions)
+    explicit SerialManipulator(const std::string& json_path, const std::array<scalar_t, DOF>& joint_position)
     {
         using json = nlohmann::json;
         // Open the JSON file
@@ -273,12 +273,12 @@ public:
             };
 
             std::array<std::array<scalar_t, DOF>, 6> limits {
-                spec["joint_limits"]["min_joint_positions"],
-                spec["joint_limits"]["max_joint_positions"],
-                spec["joint_limits"]["min_joint_velocities"],
-                spec["joint_limits"]["max_joint_velocities"],
-                spec["joint_limits"]["min_joint_accelerations"],
-                spec["joint_limits"]["max_joint_accelerations"]
+                spec["joint_limits"]["min_joint_position"],
+                spec["joint_limits"]["max_joint_position"],
+                spec["joint_limits"]["min_joint_velocity"],
+                spec["joint_limits"]["max_joint_velocity"],
+                spec["joint_limits"]["min_joint_effort"],
+                spec["joint_limits"]["max_joint_effort"]
             };
 
             for (dof_size_t i=0; i<DOF; ++i) {{
@@ -298,16 +298,16 @@ public:
             cfg.joint_damping = spec["solver_config"]["joint_damping"];
             cfg.sampling_time_sec = spec["solver_config"]["sampling_time_sec"];
             cfg.is_open_loop = spec["solver_config"]["is_open_loop"];
-            _construct(dh_params, limits, joint_positions);
+            _construct(dh_params, limits, joint_position);
             _cfg = cfg;
         } catch (json::exception& e) {
             std::cerr << "Error accessing JSON data: " << e.what() << std::endl;
         }
     }
 
-    explicit SerialManipulator(const std::array<std::array<scalar_t, DOF>, 5>& dhparams, const std::array<std::array<scalar_t, DOF>, 6>& limits, const std::array<scalar_t, DOF>& joint_positions)
+    explicit SerialManipulator(const std::array<std::array<scalar_t, DOF>, 5>& dhparams, const std::array<std::array<scalar_t, DOF>, 6>& limits, const std::array<scalar_t, DOF>& joint_position)
     {
-        _construct(dhparams, limits, joint_positions);
+        _construct(dhparams, limits, joint_position);
     }
 
     void update(const Pose<scalar_t>& desired_pose) {
@@ -364,10 +364,10 @@ public:
         std::array<double, DOF> lower_bound;
         std::array<double, DOF> upper_bound;
         for (dof_size_t i=0; i<DOF; ++i) {
-            lower_constraint_bound[i] = _data.joint_positions_limit_lower[i] - _data.joint_positions[i];
-            upper_constraint_bound[i] = _data.joint_positions_limit_upper[i] - _data.joint_positions[i];
-            lower_bound[i] = _data.joint_velocities_limit_lower[i];
-            upper_bound[i] = _data.joint_velocities_limit_upper[i];
+            lower_constraint_bound[i] = _data.joint_position_limit_lower[i] - _data.joint_position[i];
+            upper_constraint_bound[i] = _data.joint_position_limit_upper[i] - _data.joint_position[i];
+            lower_bound[i] = _data.joint_velocity_limit_lower[i];
+            upper_bound[i] = _data.joint_velocity_limit_upper[i];
         }
 
         const double* H_raw = H.data();
@@ -402,20 +402,22 @@ public:
 
         double xOpt[DOF];
         qp.getPrimalSolution(xOpt);
-        // update joint positions
+        // update joint position
         for (dof_size_t i=0; i<DOF; ++i) {
-            _data.target_joint_accelerations[i] = (xOpt[i] - _data.target_joint_velocities[i]) / _cfg.sampling_time_sec;
-            if (_data.target_joint_accelerations[i] > _data.joint_accelerations_limit_upper[i])
-                _data.target_joint_accelerations[i] = _data.joint_accelerations_limit_upper[i];
-            if (_data.target_joint_accelerations[i] < _data.joint_accelerations_limit_lower[i])
-                _data.target_joint_accelerations[i] = _data.joint_accelerations_limit_lower[i];
-            _data.target_joint_velocities[i] = xOpt[i];
-            _data.target_joint_positions[i] += xOpt[i] * _cfg.sampling_time_sec;
+            _data.target_joint_effort[i] = 1;
+            _data.target_joint_velocity[i] = xOpt[i];
+            _data.target_joint_velocity[i] = std::clamp(_data.target_joint_velocity[i],
+                _data.joint_velocity_limit_lower[i],
+                _data.joint_velocity_limit_upper[i]);
+            _data.target_joint_position[i] += xOpt[i] * _cfg.sampling_time_sec;
+            _data.target_joint_position[i] = std::clamp(_data.target_joint_position[i],
+                _data.joint_position_limit_lower[i],
+                _data.joint_position_limit_upper[i]);
         }
         if (_cfg.is_open_loop) {
-            set_joint_positions(_data.target_joint_positions);
-            set_joint_velocities(_data.target_joint_velocities);
-            set_joint_accelerations(_data.target_joint_accelerations);
+            set_joint_position(_data.target_joint_position);
+            set_joint_velocity(_data.target_joint_velocity);
+            set_joint_effort(_data.target_joint_effort);
         }
     }
 
@@ -424,17 +426,17 @@ public:
     inline void set_effector(const Pose<scalar_t>& effector) noexcept { _data.effector = effector; }
     inline void set_config(const SerialManipulatorConfig& config) noexcept { _cfg = config; }
     inline void set_open_loop(const bool is_open_loop) noexcept { _cfg.is_open_loop = is_open_loop; }
-    inline void set_joint_positions(const std::array<scalar_t, DOF>& joint_positions) noexcept {_data.joint_positions = joint_positions;}
-    inline void set_joint_velocities(const std::array<scalar_t, DOF>& joint_velocities) noexcept {_data.joint_velocities = joint_velocities;}
-    inline void set_joint_accelerations(const std::array<scalar_t, DOF>& joint_accelerations) noexcept {_data.joint_accelerations = joint_accelerations;}
+    inline void set_joint_position(const std::array<scalar_t, DOF>& joint_position) noexcept {_data.joint_position = joint_position;}
+    inline void set_joint_velocity(const std::array<scalar_t, DOF>& joint_velocity) noexcept {_data.joint_velocity = joint_velocity;}
+    inline void set_joint_effort(const std::array<scalar_t, DOF>& joint_effort) noexcept {_data.joint_effort = joint_effort;}
 
     // getters
-    inline const std::array<scalar_t, DOF>&              get_target_joint_positions() const noexcept {return _data.target_joint_positions;}
-    inline const std::array<scalar_t, DOF>&              get_target_joint_velocities() const noexcept {return _data.target_joint_velocities;}
-    inline const std::array<scalar_t, DOF>&              get_target_joint_accelerations() const noexcept {return _data.target_joint_accelerations;}
-    inline const std::array<scalar_t, DOF>&              get_joint_positions() const noexcept {return _data.joint_positions;}
-    inline const std::array<scalar_t, DOF>&              get_joint_velocities() const noexcept {return _data.joint_velocities;}
-    inline const std::array<scalar_t, DOF>&              get_joint_accelerations() const noexcept {return _data.joint_accelerations;}
+    inline const std::array<scalar_t, DOF>&              get_target_joint_position() const noexcept {return _data.target_joint_position;}
+    inline const std::array<scalar_t, DOF>&              get_target_joint_velocity() const noexcept {return _data.target_joint_velocity;}
+    inline const std::array<scalar_t, DOF>&              get_target_joint_effort() const noexcept {return _data.target_joint_effort;}
+    inline const std::array<scalar_t, DOF>&              get_joint_position() const noexcept {return _data.joint_position;}
+    inline const std::array<scalar_t, DOF>&              get_joint_velocity() const noexcept {return _data.joint_velocity;}
+    inline const std::array<scalar_t, DOF>&              get_joint_effort() const noexcept {return _data.joint_effort;}
     inline const Pose<scalar_t>&                         get_end_pose() const noexcept {return _data.joint_poses.back();}
     inline dof_size_t                                           get_dof() const noexcept {return DOF;}
     inline const SerialManipulatorConfig&      get_config() const noexcept {return _cfg;}
@@ -442,19 +444,19 @@ public:
 
 private:
     void _update_kinematics() {
-        _data.joint_poses.front() = _data.base * _pjoints.front()->fkm(_data.joint_positions.front());
+        _data.joint_poses.front() = _data.base * _pjoints.front()->fkm(_data.joint_position.front());
         for (dof_size_t i=1; i<DOF-1; ++i) {
-            _data.joint_poses[i] = _data.joint_poses[i-1] * _pjoints[i]->fkm(_data.joint_positions[i]);
+            _data.joint_poses[i] = _data.joint_poses[i-1] * _pjoints[i]->fkm(_data.joint_position[i]);
         }
-        _data.joint_poses.back() = _data.joint_poses[DOF-2] * _pjoints.back()->fkm(_data.joint_positions.back()) * _data.effector;
+        _data.joint_poses.back() = _data.joint_poses[DOF-2] * _pjoints.back()->fkm(_data.joint_position.back()) * _data.effector;
 
-        _data.joint_pose_derivatives.front() = _data.base * _pjoints.front()->derivative(_data.joint_positions.front()) 
+        _data.joint_pose_derivatives.front() = _data.base * _pjoints.front()->derivative(_data.joint_position.front()) 
                                                 * _data.joint_poses.front().conj() * _data.joint_poses.back();
         for (dof_size_t i=1; i<DOF-1; ++i){
-            _data.joint_pose_derivatives[i] = _data.joint_poses[i-1] * _pjoints[i]->derivative(_data.joint_positions[i]) 
+            _data.joint_pose_derivatives[i] = _data.joint_poses[i-1] * _pjoints[i]->derivative(_data.joint_position[i]) 
                                                 * _data.joint_poses[i].conj() * _data.joint_poses.back();
         }
-        _data.joint_pose_derivatives.back() = _data.joint_poses[DOF-2] * _pjoints.back()->derivative(_data.joint_positions.back()) * _data.effector;
+        _data.joint_pose_derivatives.back() = _data.joint_poses[DOF-2] * _pjoints.back()->derivative(_data.joint_position.back()) * _data.effector;
     }
 };
 

@@ -13,9 +13,9 @@
   <depend>std_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
+  <depend>dqpose</depend>
   <depend>qpOASES</depend>
-  <depend>timr_msgs</depend>
-
+  <depend>nlohmann_json</depend>
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
 

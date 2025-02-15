@@ -20,11 +20,6 @@ namespace timr {
 
 namespace driver {
 
-volatile sig_atomic_t kill_this_node = 0;
-
-void signal_handler([[maybe_unused]] int signum) {
-    kill_this_node = 1;
-}
 
 class DriverNode : public rclcpp::Node
 {
@@ -160,9 +155,6 @@ public:
 
 int run_driver_node(int argc, char** argv)
 {
-    signal(SIGINT, signal_handler);
-    signal(SIGTERM, signal_handler);
-    signal(SIGQUIT, signal_handler);
     
     rclcpp::init(argc, argv);
     
@@ -173,11 +165,7 @@ int run_driver_node(int argc, char** argv)
         rclcpp::shutdown();
         return 1;
     }
-    while (rclcpp::ok() && !kill_this_node) {
-        rclcpp::spin_some(node);
-        // Add small sleep to prevent CPU hogging
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
+    rclcpp::spin(node);
 
     RCLCPP_INFO(node->get_logger(), "Shutting down driver node...");
     rclcpp::shutdown();

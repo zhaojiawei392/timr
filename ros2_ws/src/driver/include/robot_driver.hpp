@@ -62,8 +62,6 @@ public:
     }
     
     ~SerialManipulatorDriver() {
-        homing();
-        std::cout << "Homing complete!\n";
         if (_can_socket >= 0) {
             close(_can_socket);
         }

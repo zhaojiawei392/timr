@@ -8,13 +8,13 @@ def generate_launch_description():
     package_share_dir = get_package_share_directory('driver')
     
     # Define the path to the config file
-    config_file = os.path.join(package_share_dir, 'config', 'driver_node.yaml')
+    config_file = os.path.join(package_share_dir, 'config', 'driver_node1.yaml')
     
     return LaunchDescription([
         Node(
             package='driver',
             executable='driver_node',
-            name='driver_node',
+            name='driver_node1',
             parameters=[config_file],
             output='screen',
         )

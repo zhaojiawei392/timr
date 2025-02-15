@@ -27,3 +27,10 @@ spec:
   stallCurrentThresholdMa: 2400
   stallDetectionMs: 4000
   positionToleranceDeg: 0.1
+  jointBounds:
+    positionLowerBound: 0
+    positionUpperBound: 150
+    velocityLowerBound: -1
+    velocityUpperBound: 1
+    effortLowerBound: 0
+    effortUpperBound: 1
