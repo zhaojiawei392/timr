@@ -32,7 +32,7 @@ ros2 topic pub -r 250 /target_joint_state sensor_msgs/msg/JointState "{
     frame_id: 'base_link'
   },
   name: ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6'],
-  position: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+  position: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
   velocity: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
   effort: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 }"

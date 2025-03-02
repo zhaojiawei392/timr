@@ -1,0 +1,4 @@
+port: /dev/ttyACM2
+baud_rate: 115200
+filter_alpha: 0.2
+sampling_time_sec: 0.004

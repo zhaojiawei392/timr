@@ -9,7 +9,7 @@ spec:
   microstep: 8
   reducerRatio: 30
   reducerChangeDirection: true
-  jointPositiveDirection: ccw
+  jointPositiveDirection: cw
   pulseMode: foc
   communicationMode: can
   enPinMode: hold

@@ -56,7 +56,7 @@ public:
             }
             catch (const std::exception& e) {
                 close(_can_socket);
-                throw std::runtime_error(_config.name + ": Failed to initialize joint " + std::to_string(i) + ": " + e.what());
+                throw std::runtime_error(_config.name + ": Failed to initialize joint " + std::to_string(i+1) + ": " + e.what());
             }
         }
     }

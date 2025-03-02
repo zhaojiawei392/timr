@@ -1,7 +1,7 @@
 // ROS2 Headers
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
-
+#include <std_msgs/msg/int32.hpp>
 // Project Headers
 #include "robot_driver.hpp"
 
@@ -28,11 +28,12 @@ private:
     std::unique_ptr<timr::driver::SerialManipulatorDriver> _driver;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr _pub_joint_state;
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr _sub_target_joint_state;
+    rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr _sub_target_gripper_state;
     rclcpp::TimerBase::SharedPtr _timer;
-    sensor_msgs::msg::JointState _cached_joint_state_msg;
-
+    sensor_msgs::msg::JointState _cached_joint_state;
+    sensor_msgs::msg::JointState _cached_target_gripper_state;
     void _callback_timer() {
-        _cached_joint_state_msg.header.stamp = now();
+        _cached_joint_state.header.stamp = now();
         
         try {
             // Get current joint positions and velocities with safety checks
@@ -41,10 +42,10 @@ private:
             const auto& efforts = _driver->get_joint_efforts();
 
             // Copy directly into existing vectors
-            std::copy(positions.begin(), positions.end(), _cached_joint_state_msg.position.begin());
-            std::copy(velocities.begin(), velocities.end(), _cached_joint_state_msg.velocity.begin());
-            std::copy(efforts.begin(), efforts.end(), _cached_joint_state_msg.effort.begin());
-            _pub_joint_state->publish(_cached_joint_state_msg);
+            std::copy(positions.begin(), positions.end(), _cached_joint_state.position.begin());
+            std::copy(velocities.begin(), velocities.end(), _cached_joint_state.velocity.begin());
+            std::copy(efforts.begin(), efforts.end(), _cached_joint_state.effort.begin());
+            _pub_joint_state->publish(_cached_joint_state);
         } catch (const std::exception& e) {
             RCLCPP_ERROR(get_logger(), "Error in publishing joint states: %s", e.what());
         }
@@ -60,11 +61,18 @@ private:
         std::copy(msg->velocity.begin(), msg->velocity.end(), velocities.begin());
         std::copy(msg->effort.begin(), msg->effort.end(), accelerations.begin());
 
+        // positions.back() += _cached_target_gripper_state.position[0] / 180.0 * M_PI;
+        // velocities.back() += _cached_target_gripper_state.velocity[0] / 180.0 * M_PI + 1.2;
+
         try {
             _driver->position_control(positions, velocities, accelerations);
         } catch (const std::exception& e) {
             RCLCPP_ERROR(get_logger(), "Error in position control: %s", e.what());
         }
+    }
+
+    void _callback_target_gripper_state(const sensor_msgs::msg::JointState::SharedPtr msg) {
+        _cached_target_gripper_state = *msg;
     }
 public:
     DriverNode()
@@ -100,14 +108,19 @@ public:
             RCLCPP_INFO(get_logger(), "Initial joint positions: %f, %f, %f, %f, %f, %f", 
                         positions[0], positions[1], positions[2], positions[3], positions[4], positions[5]);
 
-            _cached_joint_state_msg.name.resize(DOF);
-            _cached_joint_state_msg.position.resize(DOF);
-            _cached_joint_state_msg.velocity.resize(DOF);
-            _cached_joint_state_msg.effort.resize(DOF);
+            _cached_joint_state.name.resize(DOF);
+            _cached_joint_state.position.resize(DOF);
+            _cached_joint_state.velocity.resize(DOF);
+            _cached_joint_state.effort.resize(DOF);
+
+            _cached_target_gripper_state.name.resize(1);
+            _cached_target_gripper_state.position.resize(1);
+            _cached_target_gripper_state.velocity.resize(1);
+            _cached_target_gripper_state.effort.resize(1);
             
             // Set joint names
             for (dof_size_t i = 0; i < DOF; ++i) {
-                _cached_joint_state_msg.name[i] = "joint" + std::to_string(i + 1);
+                _cached_joint_state.name[i] = "joint" + std::to_string(i + 1);
             }
 
             // Create publisher for current joint states
@@ -118,6 +131,11 @@ public:
             _sub_target_joint_state = create_subscription<sensor_msgs::msg::JointState>(
                 "target_joint_state", 10,
                 std::bind(&DriverNode::_callback_target_joint_states, this, std::placeholders::_1));
+
+            // Create subscriber for gripper command
+            _sub_target_gripper_state = create_subscription<sensor_msgs::msg::JointState>(
+                "target_gripper_state", 10,
+                std::bind(&DriverNode::_callback_target_gripper_state, this, std::placeholders::_1));
 
             // Create timer for publishing current joint states
             _timer = create_wall_timer(
